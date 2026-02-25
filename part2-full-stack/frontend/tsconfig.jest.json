@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM"],
+    "verbatimModuleSyntax": false,
+    "esModuleInterop": true,
+    "types": ["jest", "@testing-library/jest-dom"]
+  }
+}
