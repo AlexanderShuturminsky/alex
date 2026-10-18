@@ -94,13 +94,16 @@ struct RaceModel: Equatable {
             return
         }
 
-        currentTrace.append(point)
-        if openedBackward(point, on: stroke) || (inside && wentBackward(projection, along: stroke)) {
+        // Direction is compared with the stroke heading, on or off the asphalt.
+        // A finger that leaves the road and slides back used to keep laying ink.
+        if movingBackward(point, on: stroke) {
             currentTrace = []
             shownStars = 0
             phase = .failed
             return
         }
+
+        currentTrace.append(point)
 
         if inside {
             if projection.progress >= maxProgress {
@@ -181,9 +184,23 @@ struct RaceModel: Equatable {
         return atEnd && maxProgress >= Self.minimumTravel
     }
 
-    private func wentBackward(_ projection: RoadProjection, along stroke: LetterStroke) -> Bool {
-        let length = RoadGeometry.length(of: stroke.centerline)
-        return (maxProgress - projection.progress) * length > Self.backwardDistance
+    /// True once the finger has moved back along the stroke by `backwardDistance`.
+    /// This is not limited to the road corridor: projection progress stays put
+    /// when the finger is beside the line, and the ink would otherwise follow.
+    private func movingBackward(_ point: LetterPoint, on stroke: LetterStroke) -> Bool {
+        if openedBackward(point, on: stroke) { return true }
+        guard maxProgress >= 0.03 else { return false }
+        guard let heading = RoadGeometry.heading(of: stroke.centerline, at: maxProgress) else { return false }
+
+        let furthest = RoadGeometry.point(at: maxProgress, along: stroke.centerline)
+        let fromFurthest = (point.x - furthest.x) * heading.x + (point.y - furthest.y) * heading.y
+        if fromFurthest < -Self.backwardDistance { return true }
+
+        if let previous = currentTrace.last {
+            let step = (point.x - previous.x) * heading.x + (point.y - previous.y) * heading.y
+            if step < -Self.backwardDistance { return true }
+        }
+        return false
     }
 
     private mutating func finishStroke(at time: TimeInterval) {

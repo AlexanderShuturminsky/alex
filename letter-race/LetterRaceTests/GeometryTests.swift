@@ -86,14 +86,14 @@ final class GeometryTests: XCTestCase {
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
         model.move(to: point(0.25, on: stroke))
-        model.move(to: offRoad)
-        model.move(to: offRoad)
-        model.move(to: offRoad)
+        model.move(to: beside(0.25, on: stroke))
+        model.move(to: beside(0.25, on: stroke))
+        model.move(to: beside(0.25, on: stroke))
         XCTAssertEqual(model.wallHits, 1)
         XCTAssertEqual(model.phase, .tracing)
 
         model.move(to: point(0.45, on: stroke))
-        model.move(to: offRoad)
+        model.move(to: beside(0.45, on: stroke))
         XCTAssertEqual(model.wallHits, 2)
     }
 
@@ -102,8 +102,9 @@ final class GeometryTests: XCTestCase {
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
         for step in 0..<4 {
-            model.move(to: point(0.15 + Double(step) * 0.1, on: stroke))
-            model.move(to: offRoad)
+            let progress = 0.15 + Double(step) * 0.1
+            model.move(to: point(progress, on: stroke))
+            model.move(to: beside(progress, on: stroke))
         }
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(model.currentTrace.isEmpty)
@@ -119,8 +120,9 @@ final class GeometryTests: XCTestCase {
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
         for step in 0..<3 {
-            model.move(to: point(0.25 + Double(step) * 0.2, on: stroke))
-            model.move(to: offRoad)
+            let leaving = 0.25 + Double(step) * 0.2
+            model.move(to: point(leaving, on: stroke))
+            model.move(to: beside(leaving, on: stroke))
             model.move(to: point(0.4 + Double(step) * 0.2, on: stroke))
         }
         XCTAssertEqual(model.wallHits, 3)
@@ -186,7 +188,30 @@ final class GeometryTests: XCTestCase {
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
         model.move(to: point(0.75, on: stroke))
+        model.move(to: point(0.72, on: stroke))
+        XCTAssertEqual(model.phase, .tracing)
+
         model.move(to: point(0.2, on: stroke))
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertTrue(model.currentTrace.isEmpty)
+        XCTAssertTrue(model.recordedPaths.isEmpty)
+    }
+
+    func testReversingOffTheRoadStopsTheStroke() {
+        var model = RaceModel(glyph: playableA)
+        let stroke = model.activeStroke!
+        model.press(at: stroke.start)
+        model.move(to: point(0.55, on: stroke))
+        model.move(to: beside(0.55, on: stroke))
+        XCTAssertEqual(model.phase, .tracing)
+        XCTAssertEqual(model.wallHits, 1)
+
+        var progress = 0.55
+        while progress > 0.35 {
+            progress -= 0.02
+            model.move(to: beside(progress, on: stroke))
+            if model.phase == .failed { break }
+        }
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(model.currentTrace.isEmpty)
         XCTAssertTrue(model.recordedPaths.isEmpty)
@@ -224,7 +249,8 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(bar.id, 3)
         model.press(at: bar.start)
         model.move(to: point(0.6, on: bar))
-        model.move(to: point(0.25, on: bar))
+        model.move(to: beside(0.6, on: bar))
+        model.move(to: beside(0.2, on: bar))
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(model.recordedPaths.count == 2)
     }
@@ -291,7 +317,12 @@ final class GeometryTests: XCTestCase {
         GlyphCatalog.glyph(id: "A")!
     }
 
-    private var offRoad: LetterPoint { LetterPoint(x: -20, y: -20) }
+    private func beside(_ progress: Double, on stroke: LetterStroke) -> LetterPoint {
+        let base = point(progress, on: stroke)
+        let start = stroke.centerline[0]
+        let end = stroke.centerline[stroke.centerline.count - 1]
+        return RoadGeometry.shifted(base, from: start, toward: end, sideways: 20)
+    }
 
     private func point(_ progress: Double, on stroke: LetterStroke) -> LetterPoint {
         RoadGeometry.point(at: progress, along: stroke.centerline)

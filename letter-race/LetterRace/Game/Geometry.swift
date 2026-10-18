@@ -132,12 +132,32 @@ enum RoadGeometry {
     }
 
     static func heading(of polyline: [LetterPoint]) -> LetterPoint? {
+        heading(of: polyline, at: 0)
+    }
+
+    /// Direction of the road at `progress`, so a curve's backward check follows the local stroke.
+    static func heading(of polyline: [LetterPoint], at progress: Double) -> LetterPoint? {
         guard polyline.count >= 2 else { return nil }
-        let dx = polyline[1].x - polyline[0].x
-        let dy = polyline[1].y - polyline[0].y
-        let span = (dx * dx + dy * dy).squareRoot()
-        guard span > 0 else { return nil }
-        return LetterPoint(x: dx / span, y: dy / span)
+        let lengths = segmentLengths(polyline)
+        let total = lengths.reduce(0, +)
+        guard total > 0 else { return nil }
+
+        let target = min(1, max(0, progress)) * total
+        var traveled = 0.0
+        for index in 0..<(polyline.count - 1) {
+            let segment = lengths[index]
+            if traveled + segment >= target - 0.000_001 || index == polyline.count - 2 {
+                let start = polyline[index]
+                let end = polyline[index + 1]
+                let dx = end.x - start.x
+                let dy = end.y - start.y
+                let span = (dx * dx + dy * dy).squareRoot()
+                guard span > 0 else { return nil }
+                return LetterPoint(x: dx / span, y: dy / span)
+            }
+            traveled += segment
+        }
+        return nil
     }
 
     static func shifted(
