@@ -3,6 +3,7 @@ import SwiftUI
 struct RaceView: View {
     @State private var model: RaceModel
     @State private var motionStart: Date?
+    @State private var almostToken = 0
 
     private static let motionDuration = 1.7
 
@@ -14,7 +15,14 @@ struct RaceView: View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionStart == nil)) { timeline in
             let motion = motionProgress(at: timeline.date)
             VStack(spacing: 0) {
-                status
+                StarMeter(
+                    filled: starCount,
+                    emphasized: model.phase == .almost || model.phase == .success,
+                    tint: model.phase == .almost ? TrackPalette.active : TrackPalette.gold
+                )
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+
                 TrackView(
                     model: model,
                     motion: motion,
@@ -23,7 +31,22 @@ struct RaceView: View {
                     onEnd: { model.release(at: $0) },
                     onCancel: { model.cancel() }
                 )
-                footer
+
+                if model.phase == .success {
+                    Button {
+                        model.reset()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(TrackPalette.ink)
+                            .frame(width: 64, height: 64)
+                            .background(TrackPalette.success, in: Circle())
+                    }
+                    .padding(.bottom, 16)
+                    .accessibilityLabel("Race again")
+                } else {
+                    Color.clear.frame(height: 24)
+                }
             }
             .onChange(of: motion) { _, newValue in
                 completeMotionIfNeeded(newValue)
@@ -36,6 +59,15 @@ struct RaceView: View {
             if phase == .driving || phase == .replaying {
                 motionStart = .now
             }
+            if phase == .almost {
+                almostToken += 1
+                let token = almostToken
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    guard token == almostToken, model.phase == .almost else { return }
+                    model.dismissAlmost()
+                }
+            }
         }
         .onChange(of: model.replayIndex) { _, _ in
             if model.phase == .replaying {
@@ -44,74 +76,13 @@ struct RaceView: View {
         }
     }
 
-    private var status: some View {
-        HStack {
-            Text(RaceCopy.progress(car: displayedCar, total: strokeCount))
-            Spacer()
-            if model.phase != .replaying && model.phase != .success {
-                Text(RaceCopy.walls(hits: min(model.wallHits, RaceModel.maxWallHits), limit: RaceModel.maxWallHits))
-            }
-        }
-        .font(.system(size: 15, weight: .semibold, design: .rounded))
-        .foregroundStyle(TrackPalette.ink)
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-    }
-
-    @ViewBuilder
-    private var footer: some View {
+    private var starCount: Int {
         switch model.phase {
-        case .failed:
-            messageCard(RaceCopy.failed, tint: TrackPalette.fail) {
-                Button("Try again") { model.tryAgain() }
-                    .buttonStyle(RaceButtonStyle())
-            }
-        case .success:
-            messageCard(RaceCopy.success(model.glyph.symbol), tint: TrackPalette.success) {
-                Button("Race again") { model.reset() }
-                    .buttonStyle(RaceButtonStyle())
-            }
-        case .replaying:
-            footerText(RaceCopy.replay(model.glyph.symbol))
-        case .driving:
-            footerText(RaceCopy.driving)
-        case .tracing:
-            footerText(RaceCopy.tracing)
-        case .awaiting:
-            footerText(RaceCopy.hint(car: model.activeStroke?.id ?? 1))
+        case .almost, .driving:
+            return model.shownStars
+        default:
+            return model.earnedStars.min() ?? 0
         }
-    }
-
-    private func messageCard<Actions: View>(_ text: String, tint: Color, @ViewBuilder actions: () -> Actions) -> some View {
-        VStack(spacing: 12) {
-            Text(text)
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(TrackPalette.ink)
-                .multilineTextAlignment(.center)
-            actions()
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 112)
-        .background(tint)
-    }
-
-    private func footerText(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 16, weight: .medium, design: .rounded))
-            .foregroundStyle(TrackPalette.waiting)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .padding(.horizontal, 20)
-    }
-
-    private var strokeCount: Int { model.track?.strokes.count ?? 0 }
-
-    private var displayedCar: Int {
-        if model.phase == .replaying {
-            return model.track?.strokes[safe: model.replayIndex]?.id ?? 1
-        }
-        return model.activeStroke?.id ?? 1
     }
 
     private func motionProgress(at date: Date) -> Double {
@@ -126,20 +97,24 @@ struct RaceView: View {
     }
 }
 
-private struct RaceButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 17, weight: .bold, design: .rounded))
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(TrackPalette.ink, in: Capsule())
-            .foregroundStyle(TrackPalette.paper)
-            .opacity(configuration.isPressed ? 0.7 : 1)
-    }
-}
+private struct StarMeter: View {
+    var filled: Int
+    var emphasized: Bool
+    var tint: Color
+    @State private var pulse = false
 
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(0..<3, id: \.self) { index in
+                Image(systemName: index < filled ? "star.fill" : "star")
+                    .font(.system(size: emphasized ? 36 : 26, weight: .bold))
+                    .foregroundStyle(index < filled ? tint : TrackPalette.waiting.opacity(0.35))
+                    .scaleEffect(emphasized && index < filled && pulse ? 1.16 : 1)
+            }
+        }
+        .frame(height: 44)
+        .onAppear { pulse = true }
+        .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: pulse)
+        .accessibilityLabel("\(filled) of 3")
     }
 }

@@ -131,6 +131,15 @@ enum RoadGeometry {
         project(point, onto: polyline).distance <= halfWidth
     }
 
+    static func heading(of polyline: [LetterPoint]) -> LetterPoint? {
+        guard polyline.count >= 2 else { return nil }
+        let dx = polyline[1].x - polyline[0].x
+        let dy = polyline[1].y - polyline[0].y
+        let span = (dx * dx + dy * dy).squareRoot()
+        guard span > 0 else { return nil }
+        return LetterPoint(x: dx / span, y: dy / span)
+    }
+
     static func shifted(
         _ point: LetterPoint,
         from start: LetterPoint,
@@ -165,5 +174,36 @@ enum RoadGeometry {
             t = min(1, max(0, raw))
         }
         return (LetterPoint(x: start.x + dx * t, y: start.y + dy * t), t)
+    }
+}
+
+struct StrokeAccuracy: Equatable {
+    var closeness: Double
+    var stars: Int
+
+    var isGoodEnough: Bool { stars >= 2 }
+
+    static func measure(
+        path: [LetterPoint],
+        centerline: [LetterPoint],
+        halfWidth: Double,
+        wallHits: Int
+    ) -> StrokeAccuracy {
+        guard halfWidth > 0, !path.isEmpty else {
+            return StrokeAccuracy(closeness: 0, stars: 1)
+        }
+        let distances = path.map { RoadGeometry.project($0, onto: centerline).distance }
+        let onRoad = distances.filter { $0 <= halfWidth * 1.25 }
+        let samples = onRoad.isEmpty ? distances : onRoad
+        let mean = samples.reduce(0, +) / Double(samples.count)
+        let raw = 1 - min(1, mean / halfWidth)
+        let closeness = max(0, raw - Double(wallHits) * 0.16)
+        return StrokeAccuracy(closeness: closeness, stars: stars(for: closeness))
+    }
+
+    static func stars(for closeness: Double) -> Int {
+        if closeness >= 0.80 { return 3 }
+        if closeness >= 0.62 { return 2 }
+        return 1
     }
 }
