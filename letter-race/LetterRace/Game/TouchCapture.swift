@@ -3,9 +3,9 @@ import UIKit
 
 struct TouchCapture: UIViewRepresentable {
     var enabled: Bool
-    var onBegin: (CGPoint) -> Void
-    var onMove: (CGPoint) -> Void
-    var onEnd: (CGPoint) -> Void
+    var onBegin: (CGPoint, TimeInterval) -> Void
+    var onMove: (CGPoint, TimeInterval) -> Void
+    var onEnd: (CGPoint, TimeInterval) -> Void
     var onCancel: () -> Void
 
     func makeUIView(context: Context) -> TouchView {
@@ -25,27 +25,27 @@ struct TouchCapture: UIViewRepresentable {
 
     final class TouchView: UIView {
         var enabled = true
-        var onBegin: (CGPoint) -> Void = { _ in }
-        var onMove: (CGPoint) -> Void = { _ in }
-        var onEnd: (CGPoint) -> Void = { _ in }
+        var onBegin: (CGPoint, TimeInterval) -> Void = { _, _ in }
+        var onMove: (CGPoint, TimeInterval) -> Void = { _, _ in }
+        var onEnd: (CGPoint, TimeInterval) -> Void = { _, _ in }
         var onCancel: () -> Void = {}
 
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             guard enabled, let touch = touches.first else { return }
-            onBegin(touch.location(in: self))
+            onBegin(touch.location(in: self), touch.timestamp)
         }
 
         override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
             guard enabled, let touch = touches.first else { return }
             let samples = event?.coalescedTouches(for: touch) ?? [touch]
             for sample in samples {
-                onMove(sample.location(in: self))
+                onMove(sample.location(in: self), sample.timestamp)
             }
         }
 
         override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
             guard enabled, let touch = touches.first else { return }
-            onEnd(touch.location(in: self))
+            onEnd(touch.location(in: self), touch.timestamp)
         }
 
         override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {

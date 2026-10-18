@@ -12,7 +12,7 @@ Beginners are taught a print capital A as three separate strokes, every one star
 2. From the top, down to the bottom-right foot
 3. The crossbar, left to right, where the middle of the letter meets the two legs
 
-Each stroke is one car. A pulsing arrow points at the car to trace next. There is no instruction text. Starting the stroke backward ends it at once. More than three wall hits ends it too. Releasing inside the hatched finish only launches the car when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. When all three cars have earned at least two stars, they drive the letter again.
+Each stroke is one car. A pulsing arrow points at the car to trace next. There is no instruction text. Going backward, at the start or later, stops the stroke. Reaching the hatched finish stops it too, so the line cannot continue past the gate. More than three wall hits ends it as well. The car launches only when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. The replay drives each stroke for as long as the finger took to draw it.
 
 ## Run it
 

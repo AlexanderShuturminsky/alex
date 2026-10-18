@@ -19,21 +19,23 @@ struct RaceModel: Equatable {
     var recordedPaths: [[LetterPoint]] = []
     var maxProgress = 0.0
     var onRoad = false
-    var reversalArmed = false
     var replayIndex = 0
     var earnedStars: [Int] = []
     var shownStars = 0
+    var traceStartedAt: TimeInterval?
+    var recordedDurations: [TimeInterval] = []
 
     /// A fourth wall hit fails the attempt. Three are still allowed.
     static let maxWallHits = 3
     static let carReach = 12.0
-    static let reverseSlack = 0.18
     static let minimumTravel = 0.62
     static let finishProgress = 0.8
     /// How far the finger must travel before a backward start counts.
     static let directionSample = 6.0
     /// Opening the stroke this far against its heading ends the attempt.
     static let openingProgress = 0.22
+    /// Going back along the road by this much stops the stroke.
+    static let backwardDistance = 4.0
 
     var track: LetterTrack? { glyph.track }
 
@@ -55,7 +57,14 @@ struct RaceModel: Equatable {
         phase == .awaiting || phase == .tracing || phase == .failed
     }
 
-    mutating func press(at point: LetterPoint) {
+    /// How long the car should take to redraw the stroke now on screen.
+    var playbackDuration: TimeInterval {
+        let index = phase == .replaying ? replayIndex : activeStrokeIndex
+        guard recordedDurations.indices.contains(index) else { return 0.8 }
+        return recordedDurations[index]
+    }
+
+    mutating func press(at point: LetterPoint, time: TimeInterval = 0) {
         if phase == .failed || phase == .almost {
             clearAttempt()
             shownStars = 0
@@ -68,32 +77,34 @@ struct RaceModel: Equatable {
         phase = .tracing
         wallHits = 0
         currentTrace = [point]
+        traceStartedAt = time
         onRoad = projection.distance <= track.roadHalfWidth
         maxProgress = onRoad ? projection.progress : 0
-        reversalArmed = true
     }
 
-    mutating func move(to point: LetterPoint) {
+    mutating func move(to point: LetterPoint, time: TimeInterval = 0) {
         guard phase == .tracing, let stroke = activeStroke, let track else { return }
+        let projection = RoadGeometry.project(point, onto: stroke.centerline)
+        let inside = projection.distance <= track.roadHalfWidth
+        let inGate = point.distance(to: stroke.gate.center) <= stroke.gate.radius
+
+        if reachedFinish(progress: projection.progress, inside: inside, inGate: inGate) {
+            currentTrace.append(point)
+            finishStroke(at: time)
+            return
+        }
+
         currentTrace.append(point)
-        if openedBackward(point, on: stroke) {
+        if openedBackward(point, on: stroke) || (inside && wentBackward(projection, along: stroke)) {
             currentTrace = []
             shownStars = 0
             phase = .failed
             return
         }
-        let projection = RoadGeometry.project(point, onto: stroke.centerline)
-        let inside = projection.distance <= track.roadHalfWidth
 
         if inside {
-            if projection.progress + Self.reverseSlack < maxProgress, reversalArmed {
-                reversalArmed = false
-                registerHit()
-                if phase != .tracing { return }
-            }
             if projection.progress >= maxProgress {
                 maxProgress = projection.progress
-                reversalArmed = true
             }
             onRoad = true
         } else if onRoad {
@@ -102,41 +113,13 @@ struct RaceModel: Equatable {
         }
     }
 
-    mutating func release(at point: LetterPoint) {
-        guard phase == .tracing, let stroke = activeStroke, let track else { return }
-        let inGate = point.distance(to: stroke.gate.center) <= stroke.gate.radius
-        if inGate {
-            currentTrace.append(point)
-        } else {
-            move(to: point)
-        }
+    mutating func release(at point: LetterPoint, time: TimeInterval = 0) {
         guard phase == .tracing else { return }
-
-        let projection = RoadGeometry.project(point, onto: stroke.centerline)
-        let onRoadNow = projection.distance <= track.roadHalfWidth
-        let traveled = maxProgress >= Self.minimumTravel
-        let finished = traveled && (inGate || (onRoadNow && maxProgress >= Self.finishProgress))
-        if finished {
-            let accuracy = StrokeAccuracy.measure(
-                path: currentTrace,
-                centerline: stroke.centerline,
-                halfWidth: track.roadHalfWidth,
-                wallHits: wallHits
-            )
-            shownStars = accuracy.stars
-            if accuracy.isGoodEnough {
-                recordedPaths.append(currentTrace)
-                earnedStars.append(accuracy.stars)
-                clearAttempt()
-                phase = .driving
-            } else {
-                phase = .almost
-            }
-        } else {
-            clearAttempt()
-            shownStars = 0
-            phase = .awaiting
-        }
+        move(to: point, time: time)
+        guard phase == .tracing else { return }
+        clearAttempt()
+        shownStars = 0
+        phase = .awaiting
     }
 
     mutating func dismissAlmost() {
@@ -185,10 +168,43 @@ struct RaceModel: Equatable {
         phase = .awaiting
         activeStrokeIndex = 0
         recordedPaths = []
+        recordedDurations = []
         replayIndex = 0
         earnedStars = []
         shownStars = 0
+        traceStartedAt = nil
         clearAttempt()
+    }
+
+    private func reachedFinish(progress: Double, inside: Bool, inGate: Bool) -> Bool {
+        let atEnd = inGate || (inside && progress >= Self.finishProgress)
+        return atEnd && maxProgress >= Self.minimumTravel
+    }
+
+    private func wentBackward(_ projection: RoadProjection, along stroke: LetterStroke) -> Bool {
+        let length = RoadGeometry.length(of: stroke.centerline)
+        return (maxProgress - projection.progress) * length > Self.backwardDistance
+    }
+
+    private mutating func finishStroke(at time: TimeInterval) {
+        guard let stroke = activeStroke, let track else { return }
+        let accuracy = StrokeAccuracy.measure(
+            path: currentTrace,
+            centerline: stroke.centerline,
+            halfWidth: track.roadHalfWidth,
+            wallHits: wallHits
+        )
+        shownStars = accuracy.stars
+        if accuracy.isGoodEnough {
+            let elapsed = time - (traceStartedAt ?? time)
+            recordedPaths.append(currentTrace)
+            recordedDurations.append(max(0.05, elapsed))
+            earnedStars.append(accuracy.stars)
+            clearAttempt()
+            phase = .driving
+        } else {
+            phase = .almost
+        }
     }
 
     private func openedBackward(_ point: LetterPoint, on stroke: LetterStroke) -> Bool {
@@ -216,6 +232,6 @@ struct RaceModel: Equatable {
         wallHits = 0
         maxProgress = 0
         onRoad = false
-        reversalArmed = false
+        traceStartedAt = nil
     }
 }

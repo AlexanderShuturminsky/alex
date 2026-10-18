@@ -181,18 +181,52 @@ final class GeometryTests: XCTestCase {
         XCTAssertTrue(centered.isGoodEnough)
     }
 
-    func testReversingOnTheRoadCountsAsAHit() {
+    func testReversingOnTheRoadStopsTheStroke() {
         var model = RaceModel(glyph: playableA)
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
         model.move(to: point(0.75, on: stroke))
         model.move(to: point(0.2, on: stroke))
-        XCTAssertEqual(model.wallHits, 1)
-        XCTAssertEqual(model.phase, .tracing)
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertTrue(model.currentTrace.isEmpty)
+        XCTAssertTrue(model.recordedPaths.isEmpty)
+    }
 
-        model.move(to: point(0.9, on: stroke))
-        model.move(to: point(0.3, on: stroke))
-        XCTAssertEqual(model.wallHits, 2)
+    func testReachingTheFinishStopsTheLine() {
+        var model = RaceModel(glyph: playableA)
+        let stroke = model.activeStroke!
+        model.press(at: stroke.start, time: 5)
+        for step in 1...20 {
+            let progress = Double(step) / 20
+            model.move(to: point(progress, on: stroke), time: 5 + 2 * progress)
+        }
+        XCTAssertEqual(model.phase, .driving)
+        let kept = model.recordedPaths[0].count
+        let drawnFor = model.recordedDurations[0]
+        XCTAssertEqual(drawnFor, 1.6, accuracy: 0.05)
+        XCTAssertEqual(model.playbackDuration, drawnFor, accuracy: 0.001)
+
+        model.move(to: point(0.3, on: stroke), time: 9)
+        model.release(at: stroke.start, time: 9.2)
+        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.recordedPaths[0].count, kept)
+        XCTAssertEqual(model.recordedDurations, [drawnFor])
+    }
+
+    func testGoingBackOnTheCrossbarStopsTheStroke() {
+        var model = RaceModel(glyph: playableA)
+        trace(&model, along: model.track!.strokes[0])
+        model.motionFinished()
+        trace(&model, along: model.track!.strokes[1])
+        model.motionFinished()
+
+        let bar = model.activeStroke!
+        XCTAssertEqual(bar.id, 3)
+        model.press(at: bar.start)
+        model.move(to: point(0.6, on: bar))
+        model.move(to: point(0.25, on: bar))
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertTrue(model.recordedPaths.count == 2)
     }
 
     func testLeavingEarlyDoesNotLaunchTheCar() {

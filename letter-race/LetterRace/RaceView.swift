@@ -5,8 +5,6 @@ struct RaceView: View {
     @State private var motionStart: Date?
     @State private var almostToken = 0
 
-    private static let motionDuration = 1.7
-
     init(glyph: Glyph) {
         _model = State(initialValue: RaceModel(glyph: glyph))
     }
@@ -26,9 +24,9 @@ struct RaceView: View {
                 TrackView(
                     model: model,
                     motion: motion,
-                    onBegin: { model.press(at: $0) },
-                    onMove: { model.move(to: $0) },
-                    onEnd: { model.release(at: $0) },
+                    onBegin: { model.press(at: $0, time: $1) },
+                    onMove: { model.move(to: $0, time: $1) },
+                    onEnd: { model.release(at: $0, time: $1) },
                     onCancel: { model.cancel() }
                 )
 
@@ -87,7 +85,8 @@ struct RaceView: View {
 
     private func motionProgress(at date: Date) -> Double {
         guard let motionStart else { return 0 }
-        return min(1, date.timeIntervalSince(motionStart) / Self.motionDuration)
+        let duration = max(model.playbackDuration, 0.05)
+        return min(1, date.timeIntervalSince(motionStart) / duration)
     }
 
     private func completeMotionIfNeeded(_ motion: Double) {

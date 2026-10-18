@@ -32,9 +32,9 @@ enum CarRole {
 struct TrackView: View {
     var model: RaceModel
     var motion: Double
-    var onBegin: (LetterPoint) -> Void
-    var onMove: (LetterPoint) -> Void
-    var onEnd: (LetterPoint) -> Void
+    var onBegin: (LetterPoint, TimeInterval) -> Void
+    var onMove: (LetterPoint, TimeInterval) -> Void
+    var onEnd: (LetterPoint, TimeInterval) -> Void
     var onCancel: () -> Void
 
     var body: some View {
@@ -52,9 +52,9 @@ struct TrackView: View {
                 badges(viewport: viewport)
                 TouchCapture(
                     enabled: model.isAcceptingTouch,
-                    onBegin: { onBegin(viewport.letter(x: $0.x, y: $0.y)) },
-                    onMove: { onMove(viewport.letter(x: $0.x, y: $0.y)) },
-                    onEnd: { onEnd(viewport.letter(x: $0.x, y: $0.y)) },
+                    onBegin: { onBegin(viewport.letter(x: $0.x, y: $0.y), $1) },
+                    onMove: { onMove(viewport.letter(x: $0.x, y: $0.y), $1) },
+                    onEnd: { onEnd(viewport.letter(x: $0.x, y: $0.y), $1) },
                     onCancel: onCancel
                 )
             }
