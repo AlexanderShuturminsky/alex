@@ -13,6 +13,8 @@ enum TrackPalette {
     static let fail = Color(red: 0.953, green: 0.839, blue: 0.800)
     static let success = Color(red: 0.835, green: 0.910, blue: 0.863)
     static let gold = Color(red: 0.93, green: 0.70, blue: 0.16)
+    static let grass = Color(red: 0.29, green: 0.62, blue: 0.04)
+    static let racingLine = Color(red: 1.0, green: 0.93, blue: 0.45)
 }
 
 enum CarRole {
@@ -48,7 +50,9 @@ struct TrackView: View {
                     .opacity(model.phase == .failed ? 0.42 : 0)
                     .animation(.easeInOut(duration: 0.3), value: model.phase == .failed)
                     .allowsHitTesting(false)
-                directionChevrons(viewport: viewport)
+                if !usesTrackArt {
+                    directionChevrons(viewport: viewport)
+                }
                 badges(viewport: viewport)
                 pointer(viewport: viewport)
                 TouchCapture(
@@ -71,7 +75,9 @@ struct TrackView: View {
                let stroke = highlightedStroke,
                let heading = RoadGeometry.heading(of: stroke.centerline) {
                 let length = max(44, viewport.scale * 12)
-                let carRadius = Double(badgeSide(.active, viewport: viewport)) / viewport.scale / 2
+                let carRadius = usesTrackArt
+                    ? Double(carLength(viewport: viewport)) / viewport.scale / 2
+                    : Double(badgeSide(.active, viewport: viewport)) / viewport.scale / 2
                 let tipClearance = carRadius + 5
                 let centerBack = tipClearance + Double(length) / viewport.scale / 2
                 let mid = LetterPoint(
@@ -86,23 +92,71 @@ struct TrackView: View {
         }
     }
 
+    private var usesTrackArt: Bool { model.glyph.id == "A" }
+
     private func badges(viewport: LetterViewport) -> some View {
         let strokes = model.track?.strokes ?? []
         return ForEach(Array(strokes.enumerated()), id: \.element.id) { index, stroke in
             let role = role(for: index)
-            CarBadge(
-                number: stroke.id,
-                role: role,
-                side: badgeSide(role, viewport: viewport),
-                pulsing: role == .active && model.showsPointer
-            )
-            .position(badgePosition(index: index, stroke: stroke, viewport: viewport))
+            let place = badgePosition(index: index, stroke: stroke, viewport: viewport)
+            Group {
+                if usesTrackArt {
+                    CarSprite(
+                        name: stroke.id == 1 ? "CarRed" : "CarGreen",
+                        length: carLength(viewport: viewport),
+                        angle: carAngle(index: index, stroke: stroke),
+                        pulsing: role == .active && model.showsPointer,
+                        dimmed: role == .done
+                    )
+                } else {
+                    CarBadge(
+                        number: stroke.id,
+                        role: role,
+                        side: badgeSide(role, viewport: viewport),
+                        pulsing: role == .active && model.showsPointer
+                    )
+                }
+            }
+            .position(place)
             .allowsHitTesting(false)
         }
     }
 
+    private func carLength(viewport: LetterViewport) -> CGFloat {
+        CGFloat(max(64, viewport.scale * 15))
+    }
+
+    private func carAngle(index: Int, stroke: LetterStroke) -> Angle {
+        let path: [LetterPoint]
+        let progress: Double
+        if isMoving(index), model.recordedPaths.indices.contains(index) {
+            path = model.recordedPaths[index]
+            progress = motion
+        } else if isParkedAtStart(index) {
+            path = stroke.centerline
+            progress = 0
+        } else if model.recordedPaths.indices.contains(index) {
+            path = model.recordedPaths[index]
+            progress = 1
+        } else {
+            path = stroke.centerline
+            progress = 1
+        }
+        guard let heading = RoadGeometry.heading(of: path, at: progress) ?? RoadGeometry.heading(of: path) else {
+            return .zero
+        }
+        return Angle(radians: atan2(heading.y, heading.x))
+    }
+
     private func drawTrack(context: GraphicsContext, viewport: LetterViewport) {
         guard let track = model.track else { return }
+        if usesTrackArt {
+            let side = 100 * viewport.scale
+            let rect = CGRect(x: viewport.originX, y: viewport.originY, width: side, height: side)
+            context.draw(Image("TrackA"), in: rect)
+            drawInk(viewport: viewport, context: context, color: TrackPalette.racingLine)
+            return
+        }
         let half = track.roadHalfWidth
         for stroke in track.strokes {
             let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
@@ -128,12 +182,16 @@ struct TrackView: View {
         for (index, stroke) in track.strokes.enumerated() {
             drawGate(stroke, active: index == highlightedIndex, viewport: viewport, context: context)
         }
+        drawInk(viewport: viewport, context: context, color: model.phase == .almost ? TrackPalette.active : TrackPalette.ink.opacity(0.9))
+    }
+
+    private func drawInk(viewport: LetterViewport, context: GraphicsContext, color: Color) {
         for ink in inkPaths() {
             let partial = RoadGeometry.prefix(ink.points, through: ink.progress)
             strokeRoad(
                 partial,
                 width: max(4, viewport.scale * 3.4),
-                color: model.phase == .almost ? TrackPalette.active : TrackPalette.ink.opacity(0.9),
+                color: color,
                 viewport: viewport,
                 context: context
             )
@@ -372,6 +430,28 @@ struct TrackView: View {
 
     private func cg(_ point: LetterPoint, _ viewport: LetterViewport) -> CGPoint {
         CGPoint(x: viewport.viewX(point), y: viewport.viewY(point))
+    }
+}
+
+private struct CarSprite: View {
+    var name: String
+    var length: CGFloat
+    var angle: Angle
+    var pulsing: Bool
+    var dimmed: Bool
+    @State private var pulse = false
+
+    var body: some View {
+        Image(name)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: length)
+            .rotationEffect(angle)
+            .opacity(dimmed ? 0.72 : 1)
+            .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
+            .scaleEffect(pulsing && pulse ? 1.06 : 1)
+            .onAppear { pulse = true }
+            .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: pulse)
     }
 }
 
