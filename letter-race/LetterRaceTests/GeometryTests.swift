@@ -154,19 +154,16 @@ final class GeometryTests: XCTestCase {
         model.motionFinished()
         let bowl = model.activeStroke!
         model.press(at: bowl.start)
-        let finger: [LetterPoint] = [
-            LetterPoint(x: 48, y: 16),
-            LetterPoint(x: 62, y: 28),
-            LetterPoint(x: 52, y: 34),
-            LetterPoint(x: 40, y: 40),
-            LetterPoint(x: 32, y: 48),
-            LetterPoint(x: 36, y: 54),
-            LetterPoint(x: 52, y: 60),
-            LetterPoint(x: 68, y: 72),
-            LetterPoint(x: 58, y: 84),
-            LetterPoint(x: 40, y: 88),
-            LetterPoint(x: 30, y: 88),
-        ]
+        let line = bowl.centerline
+        let stride = max(1, line.count / 10)
+        var finger: [LetterPoint] = []
+        var index = stride
+        while index < line.count - 1 {
+            let sample = line[index]
+            finger.append(LetterPoint(x: sample.x - 4, y: sample.y))
+            index += stride
+        }
+        finger.append(line[line.count - 1])
         for point in finger {
             model.move(to: point)
             XCTAssertEqual(model.phase, .tracing, "stopped at \(point)")
@@ -181,7 +178,8 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(track.strokes.map(\.id), [1, 2])
         let peak = track.strokes[0]
         XCTAssertEqual(peak.start, LetterA.leftFoot)
-        XCTAssertEqual(peak.centerline, [LetterA.leftFoot, LetterA.apex, LetterA.rightFoot])
+        XCTAssertGreaterThan(peak.centerline.count, 3)
+        XCTAssertFalse(peak.centerline.contains(LetterA.apex))
         XCTAssertEqual(peak.centerline.last, LetterA.rightFoot)
         XCTAssertNotEqual(peak.centerline.last, LetterA.apex)
 
@@ -199,6 +197,30 @@ final class GeometryTests: XCTestCase {
         )
         XCTAssertTrue(RoadGeometry.isOnRoad(LetterA.apex, polyline: peak.centerline, halfWidth: track.roadHalfWidth))
         XCTAssertFalse(RoadGeometry.isOnRoad(LetterPoint(x: -10, y: -10), polyline: peak.centerline, halfWidth: track.roadHalfWidth))
+    }
+
+    func testBowlsAreWideOvalsAndCornersAreRound() {
+        for symbol in ["a", "Q", "q"] {
+            let bowl = GlyphCatalog.glyph(id: symbol)!.track!.strokes[0].centerline
+            let size = bounds(of: bowl)
+            XCTAssertGreaterThan(size.width, size.height * 1.2, symbol)
+        }
+
+        let bowls = LetterB.track.strokes[1].centerline
+        let waist = bowls[bowls.count / 2]
+        XCTAssertGreaterThan(sharpestCornerDot(on: bowls, skippingAround: waist), 0.90)
+        let rightmost = bowls.max { $0.x < $1.x }!
+        XCTAssertGreaterThan(rightmost.x, waist.x + 28)
+
+        let zigzag = LetterW.track.strokes[0].centerline
+        let valley = LetterPoint(x: 32, y: 88)
+        XCTAssertFalse(zigzag.contains(valley))
+        let rounded = RoadGeometry.project(valley, onto: zigzag).distance
+        XCTAssertGreaterThan(rounded, 8)
+        XCTAssertLessThan(rounded, 22)
+        XCTAssertGreaterThan(sharpestCornerDot(on: zigzag, skippingAround: LetterPoint(x: -100, y: -100)), 0.90)
+        XCTAssertEqual(LetterW.track.strokes.count, 1)
+        XCTAssertEqual(LetterA.track.strokes.count, 2)
     }
 
     func testLetterApexIsOneMove() {
@@ -580,6 +602,34 @@ final class GeometryTests: XCTestCase {
             let side = sideFrom + (sideTo - sideFrom) * t
             model.move(to: drifted(progress, on: stroke, sideways: side))
         }
+    }
+
+    private func bounds(of line: [LetterPoint]) -> (width: Double, height: Double) {
+        let minX = line.map(\.x).min() ?? 0
+        let maxX = line.map(\.x).max() ?? 0
+        let minY = line.map(\.y).min() ?? 0
+        let maxY = line.map(\.y).max() ?? 0
+        return (maxX - minX, maxY - minY)
+    }
+
+    /// Smallest neighboring-heading dot, ignoring the fold at `skip`. Near 1 means every corner is round.
+    private func sharpestCornerDot(on line: [LetterPoint], skippingAround skip: LetterPoint) -> Double {
+        var smoothest = 1.0
+        guard line.count >= 3 else { return smoothest }
+        for index in 1..<(line.count - 1) {
+            if line[index].distance(to: skip) < 4 { continue }
+            let inbound = heading(from: line[index - 1], to: line[index])
+            let outbound = heading(from: line[index], to: line[index + 1])
+            smoothest = min(smoothest, inbound.x * outbound.x + inbound.y * outbound.y)
+        }
+        return smoothest
+    }
+
+    private func heading(from start: LetterPoint, to end: LetterPoint) -> LetterPoint {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = max(hypot(dx, dy), 0.001)
+        return LetterPoint(x: dx / length, y: dy / length)
     }
 
     private func point(_ progress: Double, on stroke: LetterStroke) -> LetterPoint {
