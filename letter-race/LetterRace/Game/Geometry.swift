@@ -26,29 +26,53 @@ struct DirectionMark: Equatable {
 struct LetterViewport: Equatable {
     var width: Double
     var height: Double
-    var inset: Double = 36
+    /// Margin on each edge, as a fraction of that edge. The letter fills the rest, so a
+    /// margin of 0.05 uses 90% of the screen in both directions and stretches it taller.
+    var margin: Double = 0.05
 
-    var scale: Double {
-        let availableWidth = max(0, width - inset * 2)
-        let availableHeight = max(0, height - inset * 2)
-        guard availableWidth > 0, availableHeight > 0 else { return 0 }
-        return min(availableWidth / 100, availableHeight / 100)
+    var scaleX: Double {
+        let available = max(0, width * (1 - margin * 2))
+        guard available > 0, width > 0 else { return 0 }
+        return available / 100
     }
 
-    var originX: Double { (width - 100 * scale) / 2 }
-    var originY: Double { (height - 100 * scale) / 2 }
+    var scaleY: Double {
+        let available = max(0, height * (1 - margin * 2))
+        guard available > 0, height > 0 else { return 0 }
+        return available / 100
+    }
+
+    /// Points per letter unit for round marks. The narrower axis, so a car stays on the road.
+    var scale: Double { min(scaleX, scaleY) }
+
+    var originX: Double { (width - 100 * scaleX) / 2 }
+    var originY: Double { (height - 100 * scaleY) / 2 }
 
     func letter(x: Double, y: Double) -> LetterPoint {
-        guard scale > 0 else { return LetterPoint(x: 0, y: 0) }
-        return LetterPoint(x: (x - originX) / scale, y: (y - originY) / scale)
+        guard scaleX > 0, scaleY > 0 else { return LetterPoint(x: 0, y: 0) }
+        return LetterPoint(x: (x - originX) / scaleX, y: (y - originY) / scaleY)
     }
 
-    func viewX(_ point: LetterPoint) -> Double { originX + point.x * scale }
-    func viewY(_ point: LetterPoint) -> Double { originY + point.y * scale }
+    func viewX(_ point: LetterPoint) -> Double { originX + point.x * scaleX }
+    func viewY(_ point: LetterPoint) -> Double { originY + point.y * scaleY }
+
+    /// Screen points for one letter unit in `heading`'s direction.
+    func viewScale(along heading: LetterPoint) -> Double {
+        hypot(heading.x * scaleX, heading.y * scaleY)
+    }
+
+    /// Screen points for one letter unit perpendicular to `heading`.
+    func viewScale(across heading: LetterPoint) -> Double {
+        hypot(-heading.y * scaleX, heading.x * scaleY)
+    }
 }
 
 enum RoadGeometry {
-    static func project(_ point: LetterPoint, onto polyline: [LetterPoint]) -> RoadProjection {
+    static func project(
+        _ point: LetterPoint,
+        onto polyline: [LetterPoint],
+        near progress: Double? = nil
+    ) -> RoadProjection {
         guard let first = polyline.first else {
             return RoadProjection(distance: 0, progress: 0, closest: point)
         }
@@ -61,22 +85,43 @@ enum RoadGeometry {
         var bestDistance = Double.greatestFiniteMagnitude
         var bestProgress = 0.0
         var bestPoint = first
+        var nearDistance = Double.greatestFiniteMagnitude
+        var nearProgress = 0.0
+        var nearPoint = first
+        let continuity = progress.map { near -> (low: Double, high: Double) in
+            let anchor = min(1, max(0, near)) * total
+            // Stay with the part of the stroke under the finger. A loop's end can sit on
+            // its start, and B folds back, so the globally nearest point can be the wrong lap.
+            return (anchor - 14, anchor + max(64, total * 0.45))
+        }
         var traveled = 0.0
 
         for index in 0..<(polyline.count - 1) {
+            let segment = lengths[index]
+            let segmentStart = traveled
+            traveled += segment
             let start = polyline[index]
             let end = polyline[index + 1]
             let (closest, t) = closestPoint(point, start, end)
             let distance = point.distance(to: closest)
+            let along = segmentStart + t * segment
             if distance < bestDistance {
                 bestDistance = distance
                 bestPoint = closest
-                let along = traveled + t * lengths[index]
                 bestProgress = total > 0 ? along / total : 0
             }
-            traveled += lengths[index]
+            if let continuity, along >= continuity.low, along <= continuity.high, distance < nearDistance {
+                nearDistance = distance
+                nearPoint = closest
+                nearProgress = total > 0 ? along / total : 0
+            }
         }
 
+        // Prefer the continuation when the finger is still near it. A big jump ahead,
+        // or a real reverse, falls through to the globally nearest point.
+        if let _ = continuity, nearDistance <= 18 || nearDistance <= bestDistance + 6 {
+            return RoadProjection(distance: nearDistance, progress: nearProgress, closest: nearPoint)
+        }
         return RoadProjection(distance: bestDistance, progress: bestProgress, closest: bestPoint)
     }
 

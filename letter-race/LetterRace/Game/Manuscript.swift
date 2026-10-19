@@ -23,9 +23,56 @@ enum Manuscript {
         }
     }
 
-    static func track(strokes: [[LetterPoint]], half: Double) -> LetterTrack {
-        LetterTrack(
-            strokes: strokes.enumerated().map { index, line in
+    /// Grows a small letter until its longer side is `span` letter units, about 15% under a capital.
+    static func enlarged(_ strokes: [[LetterPoint]], span: Double) -> [[LetterPoint]] {
+        var minX = Double.greatestFiniteMagnitude
+        var minY = minX
+        var maxX = -minX
+        var maxY = -minX
+        for line in strokes {
+            for point in line {
+                minX = min(minX, point.x)
+                maxX = max(maxX, point.x)
+                minY = min(minY, point.y)
+                maxY = max(maxY, point.y)
+            }
+        }
+        let width = max(maxX - minX, 0.001)
+        let height = max(maxY - minY, 0.001)
+        let scale = span / max(width, height)
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+        return strokes.map { line in
+            line.map { point in
+                LetterPoint(
+                    x: 50 + (point.x - centerX) * scale,
+                    y: 50 + (point.y - centerY) * scale
+                )
+            }
+        }
+    }
+
+    static func span(of strokes: [[LetterPoint]]) -> Double {
+        var minX = Double.greatestFiniteMagnitude
+        var minY = minX
+        var maxX = -minX
+        var maxY = -minX
+        for line in strokes {
+            for point in line {
+                minX = min(minX, point.x)
+                maxX = max(maxX, point.x)
+                minY = min(minY, point.y)
+                maxY = max(maxY, point.y)
+            }
+        }
+        guard minX.isFinite else { return 1 }
+        return max(maxX - minX, maxY - minY, 1)
+    }
+
+    static func track(strokes: [[LetterPoint]], half: Double, fitSpan: Double? = nil) -> LetterTrack {
+        let fitted = fitSpan.map { enlarged(strokes, span: $0) } ?? strokes
+        return LetterTrack(
+            strokes: fitted.enumerated().map { index, line in
                 let end = line.last ?? LetterPoint(x: 50, y: 50)
                 return LetterStroke(
                     id: index + 1,
@@ -51,7 +98,8 @@ enum LetterSmallA {
             ),
             [LetterPoint(x: 58, y: 48), LetterPoint(x: 58, y: 80)],
         ],
-        half: 8
+        half: 12,
+        fitSpan: Manuscript.span(of: LetterA.track.strokes.map(\.centerline)) * 0.85
     )
 }
 
@@ -74,7 +122,7 @@ enum LetterB {
                 LetterPoint(x: 30, y: 88),
             ],
         ],
-        half: 8
+        half: 12
     )
 }
 
@@ -92,7 +140,8 @@ enum LetterSmallB {
                 LetterPoint(x: 34, y: 82),
             ],
         ],
-        half: 8
+        half: 11,
+        fitSpan: Manuscript.span(of: LetterB.track.strokes.map(\.centerline)) * 0.85
     )
 }
 
@@ -109,7 +158,7 @@ enum LetterQ {
             ),
             [LetterPoint(x: 56, y: 62), LetterPoint(x: 76, y: 88)],
         ],
-        half: 8
+        half: 12
     )
 }
 
@@ -130,7 +179,8 @@ enum LetterSmallQ {
                 LetterPoint(x: 64, y: 98),
             ],
         ],
-        half: 8
+        half: 11,
+        fitSpan: Manuscript.span(of: LetterQ.track.strokes.map(\.centerline)) * 0.85
     )
 }
 
@@ -144,7 +194,7 @@ enum LetterW {
             LetterPoint(x: 68, y: 88),
             LetterPoint(x: 86, y: 16),
         ]],
-        half: 7
+        half: 9
     )
 }
 
@@ -158,6 +208,7 @@ enum LetterSmallW {
             LetterPoint(x: 68, y: 84),
             LetterPoint(x: 84, y: 48),
         ]],
-        half: 7
+        half: 8,
+        fitSpan: Manuscript.span(of: LetterW.track.strokes.map(\.centerline)) * 0.85
     )
 }

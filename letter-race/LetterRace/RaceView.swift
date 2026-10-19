@@ -13,15 +13,7 @@ struct RaceView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionStart == nil)) { timeline in
             let motion = motionProgress(at: timeline.date)
-            VStack(spacing: 0) {
-                StarMeter(
-                    filled: starCount,
-                    tint: model.phase == .almost ? TrackPalette.active : TrackPalette.gold
-                )
-                .frame(height: 52)
-                PassDots(filled: progress.progress.count(for: model.glyph.id))
-                    .frame(height: 16)
-
+            ZStack {
                 TrackView(
                     model: model,
                     motion: motion,
@@ -31,23 +23,35 @@ struct RaceView: View {
                     onCancel: { model.cancel() }
                 )
 
-                ZStack {
-                    if model.phase == .success {
-                        Button {
-                            model.reset()
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundStyle(TrackPalette.ink)
-                                .frame(width: 64, height: 64)
-                                .background(TrackPalette.success, in: Circle())
+                VStack(spacing: 2) {
+                    StarMeter(
+                        filled: starCount,
+                        tint: model.phase == .almost ? TrackPalette.active : TrackPalette.gold
+                    )
+                    .frame(height: 36)
+                    PassDots(filled: progress.progress.count(for: model.glyph.id))
+                        .frame(height: 12)
+                    Spacer()
+                    ZStack {
+                        if model.phase == .success {
+                            Button {
+                                model.reset()
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundStyle(TrackPalette.ink)
+                                    .frame(width: 64, height: 64)
+                                    .background(TrackPalette.success, in: Circle())
+                            }
+                            .transition(.opacity.combined(with: .scale(scale: 0.86)))
+                            .accessibilityLabel("Race again")
                         }
-                        .transition(.opacity.combined(with: .scale(scale: 0.86)))
-                        .accessibilityLabel("Race again")
                     }
+                    .frame(height: 72)
+                    .animation(.easeInOut(duration: 0.35), value: model.phase == .success)
                 }
-                .frame(height: 96)
-                .animation(.easeInOut(duration: 0.35), value: model.phase == .success)
+                .padding(.top, 4)
+                .allowsHitTesting(model.phase == .success)
             }
             .onChange(of: motion) { _, newValue in
                 completeMotionIfNeeded(newValue)

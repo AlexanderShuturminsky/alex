@@ -132,7 +132,7 @@ struct TrackView: View {
             let partial = RoadGeometry.prefix(ink.points, through: ink.progress)
             strokeRoad(
                 partial,
-                width: max(2.5, viewport.scale * 2.2),
+                width: max(4, viewport.scale * 3.4),
                 color: model.phase == .almost ? TrackPalette.active : TrackPalette.ink.opacity(0.9),
                 viewport: viewport,
                 context: context
@@ -165,14 +165,20 @@ struct TrackView: View {
         guard stroke.centerline.count >= 2 else { return }
         let start = stroke.centerline[stroke.centerline.count - 2]
         let end = stroke.centerline[stroke.centerline.count - 1]
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let center = cg(end, viewport)
-        let half = CGFloat(viewport.scale * (model.track?.roadHalfWidth ?? 9) * 0.95)
+        let letterDx = end.x - start.x
+        let letterDy = end.y - start.y
+        let letterSpan = max(0.001, hypot(letterDx, letterDy))
+        let heading = LetterPoint(x: letterDx / letterSpan, y: letterDy / letterSpan)
+        let startV = cg(start, viewport)
+        let endV = cg(end, viewport)
+        let angle = atan2(endV.y - startV.y, endV.x - startV.x)
+        let alongScale = viewport.viewScale(along: heading)
+        let half = CGFloat(viewport.scale * (model.track?.roadHalfWidth ?? 13) * 0.95)
         var path = Path()
         for offset in FinishZone.offsets {
-            let along = CGFloat(offset * viewport.scale)
-            let cx = center.x + CGFloat(cos(angle)) * along
-            let cy = center.y + CGFloat(sin(angle)) * along
+            let along = CGFloat(offset * alongScale)
+            let cx = endV.x + CGFloat(cos(angle)) * along
+            let cy = endV.y + CGFloat(sin(angle)) * along
             let px = CGFloat(cos(angle + .pi / 2))
             let py = CGFloat(sin(angle + .pi / 2))
             path.move(to: CGPoint(x: cx - px * half, y: cy - py * half))
@@ -334,8 +340,8 @@ struct TrackView: View {
     }
 
     private func badgeSide(_ role: CarRole, viewport: LetterViewport) -> CGFloat {
-        let base = viewport.scale * (role == .active ? 13.0 : 10.0)
-        return CGFloat(max(role == .active ? 36.0 : 28.0, base))
+        let base = viewport.scale * (role == .active ? 18.0 : 14.0)
+        return CGFloat(max(role == .active ? 48.0 : 36.0, base))
     }
 
     private func badgePosition(index: Int, stroke: LetterStroke, viewport: LetterViewport) -> CGPoint {

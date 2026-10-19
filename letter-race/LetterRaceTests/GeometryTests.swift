@@ -79,17 +79,73 @@ final class GeometryTests: XCTestCase {
     }
 
     func testViewportRoundTrip() {
-        let viewport = LetterViewport(width: 200, height: 400, inset: 20)
-        XCTAssertEqual(viewport.scale, 1.6, accuracy: 0.001)
+        let viewport = LetterViewport(width: 200, height: 400)
+        XCTAssertEqual(viewport.scaleX, 1.8, accuracy: 0.001)
+        XCTAssertEqual(viewport.scaleY, 3.6, accuracy: 0.001)
+        XCTAssertEqual(viewport.scale, 1.8, accuracy: 0.001)
         let center = LetterPoint(x: 50, y: 50)
         XCTAssertEqual(viewport.viewX(center), 100, accuracy: 0.001)
         XCTAssertEqual(viewport.viewY(center), 200, accuracy: 0.001)
         let back = viewport.letter(x: viewport.viewX(center), y: viewport.viewY(center))
         XCTAssertEqual(back.x, center.x, accuracy: 0.001)
         XCTAssertEqual(back.y, center.y, accuracy: 0.001)
+        let top = LetterPoint(x: 0, y: 0)
+        let bottom = LetterPoint(x: 0, y: 100)
+        let tall = viewport.viewY(bottom) - viewport.viewY(top)
+        XCTAssertEqual(tall / viewport.height, 0.9, accuracy: 0.001)
 
-        let tiny = LetterViewport(width: 10, height: 10, inset: 36)
+        let tiny = LetterViewport(width: 0, height: 0)
         XCTAssertEqual(tiny.letter(x: 4, y: 4), LetterPoint(x: 0, y: 0))
+    }
+
+    func testSmallLettersStayCloseToTheirCapitals() {
+        let pairs: [(Glyph, Glyph)] = [
+            (GlyphCatalog.glyph(id: "A")!, GlyphCatalog.glyph(id: "a")!),
+            (GlyphCatalog.glyph(id: "B")!, GlyphCatalog.glyph(id: "b")!),
+            (GlyphCatalog.glyph(id: "Q")!, GlyphCatalog.glyph(id: "q")!),
+            (GlyphCatalog.glyph(id: "W")!, GlyphCatalog.glyph(id: "w")!),
+        ]
+        for (capital, small) in pairs {
+            let capitalSpan = Manuscript.span(of: capital.track!.strokes.map(\.centerline))
+            let smallSpan = Manuscript.span(of: small.track!.strokes.map(\.centerline))
+            XCTAssertGreaterThan(smallSpan, capitalSpan * 0.80)
+            XCTAssertLessThan(smallSpan, capitalSpan * 0.90)
+        }
+        XCTAssertGreaterThan(LetterA.roadHalfWidth, 9)
+    }
+
+    func testCircleDoesNotFinishAtItsStart() {
+        let circle = LetterQ.track.strokes[0].centerline
+        let late = RoadGeometry.point(at: 0.98, along: circle)
+        let jumped = RoadGeometry.project(late, onto: circle)
+        XCTAssertGreaterThan(jumped.progress, 0.9)
+        let held = RoadGeometry.project(late, onto: circle, near: 0)
+        XCTAssertLessThan(held.progress, 0.3)
+
+        var model = RaceModel(glyph: GlyphCatalog.glyph(id: "Q")!)
+        let stroke = model.activeStroke!
+        model.press(at: stroke.start)
+        for step in 1...16 {
+            model.move(to: point(Double(step) / 40, on: stroke))
+        }
+        XCTAssertEqual(model.phase, .tracing)
+        XCTAssertLessThan(model.maxProgress, 0.7)
+        for step in 17...40 {
+            model.move(to: point(Double(step) / 40, on: stroke))
+        }
+        model.release(at: FinishZone.middle(on: stroke))
+        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.wallHits, 0)
+    }
+
+    func testFoldingBackAlongTheLetterDoesNotStop() {
+        var model = RaceModel(glyph: GlyphCatalog.glyph(id: "B")!)
+        trace(&model, along: model.track!.strokes[0])
+        XCTAssertEqual(model.phase, .driving)
+        model.motionFinished()
+        trace(&model, along: model.track!.strokes[1])
+        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.wallHits, 0)
     }
 
     func testLetterAFollowsTheChart() {

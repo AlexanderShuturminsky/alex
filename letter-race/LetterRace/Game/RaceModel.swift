@@ -27,7 +27,7 @@ struct RaceModel: Equatable {
 
     /// A fourth wall hit fails the attempt. Three are still allowed.
     static let maxWallHits = 3
-    static let carReach = 12.0
+    static let carReach = 16.0
     static let minimumTravel = 0.62
     /// How far the finger must travel before a backward start counts.
     static let directionSample = 6.0
@@ -74,7 +74,7 @@ struct RaceModel: Equatable {
         guard phase == .awaiting, let stroke = activeStroke, let track else { return }
         guard point.distance(to: stroke.start) <= Self.carReach else { return }
 
-        let projection = RoadGeometry.project(point, onto: stroke.centerline)
+        let projection = RoadGeometry.project(point, onto: stroke.centerline, near: 0)
         phase = .tracing
         wallHits = 0
         currentTrace = [point]
@@ -85,10 +85,10 @@ struct RaceModel: Equatable {
 
     mutating func move(to point: LetterPoint, time: TimeInterval = 0) {
         guard phase == .tracing, let stroke = activeStroke, let track else { return }
-        let projection = RoadGeometry.project(point, onto: stroke.centerline)
+        let projection = RoadGeometry.project(point, onto: stroke.centerline, near: maxProgress)
         let inside = projection.distance <= track.roadHalfWidth
 
-        if reachedFinish(point, halfWidth: track.roadHalfWidth, on: stroke) {
+        if reachedFinish(point, projection: projection, halfWidth: track.roadHalfWidth, on: stroke) {
             currentTrace.append(FinishZone.middle(on: stroke))
             finishStroke(at: time)
             return
@@ -178,12 +178,15 @@ struct RaceModel: Equatable {
     }
 
     /// The ink stops at the middle stripe, not at the near edge of the hatches.
+    /// A loop's start can sit on its own finish, so the finger also has to be near the
+    /// end of the stroke, not merely standing where the circle began.
     private func reachedFinish(
         _ point: LetterPoint,
+        projection: RoadProjection,
         halfWidth: Double,
         on stroke: LetterStroke
     ) -> Bool {
-        guard maxProgress >= Self.minimumTravel else { return false }
+        guard maxProgress >= Self.minimumTravel, projection.progress >= 0.90 else { return false }
         guard let heading = RoadGeometry.heading(of: stroke.centerline, at: 1) else { return false }
         let gate = stroke.gate.center
         let along = (point.x - gate.x) * heading.x + (point.y - gate.y) * heading.y
@@ -192,8 +195,9 @@ struct RaceModel: Equatable {
         return lateral <= halfWidth && along >= FinishZone.middleOffset - 0.05
     }
 
-    /// A sharp corner, or a sustained move well off the stroke direction, ends the ink.
-    /// A short wobble does not: the new direction has to hold for `cornerSpan`.
+    /// A sharp corner, or a sustained move back along the stroke, ends the ink.
+    /// Folding back is allowed when that fold is the letter itself: the finger is still
+    /// moving forward along the road, as in the middle of B or around Q.
     private func turnedSharply(
         _ point: LetterPoint,
         projection: RoadProjection,
