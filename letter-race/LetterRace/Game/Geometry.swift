@@ -33,12 +33,13 @@ struct LetterViewport: Equatable {
     var scaleX: Double { scale }
     var scaleY: Double { scale }
 
-    /// Points per letter unit. The same on both axes, sized to the side that fits.
+    /// Points per letter unit. The same on both axes. Ten percent larger than the
+    /// box that already kept a small margin, so the letter fills almost the whole short side.
     var scale: Double {
         let availableWidth = max(0, width * (1 - margin * 2))
         let availableHeight = max(0, height * (1 - margin * 2))
         guard availableWidth > 0, availableHeight > 0 else { return 0 }
-        return min(availableWidth, availableHeight) / 100
+        return min(availableWidth, availableHeight) / 100 * 1.1
     }
 
     var originX: Double { (width - 100 * scaleX) / 2 }

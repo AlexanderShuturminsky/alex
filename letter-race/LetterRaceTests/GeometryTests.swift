@@ -81,7 +81,7 @@ final class GeometryTests: XCTestCase {
     func testViewportRoundTrip() {
         let viewport = LetterViewport(width: 200, height: 400)
         XCTAssertEqual(viewport.scaleX, viewport.scaleY, accuracy: 0.001)
-        XCTAssertEqual(viewport.scale, 1.8, accuracy: 0.001)
+        XCTAssertEqual(viewport.scale, 1.98, accuracy: 0.001)
         let center = LetterPoint(x: 50, y: 50)
         XCTAssertEqual(viewport.viewX(center), 100, accuracy: 0.001)
         XCTAssertEqual(viewport.viewY(center), 200, accuracy: 0.001)
@@ -92,7 +92,7 @@ final class GeometryTests: XCTestCase {
         let bottom = LetterPoint(x: 0, y: 100)
         let side = viewport.viewY(bottom) - viewport.viewY(top)
         XCTAssertEqual(viewport.viewX(LetterPoint(x: 100, y: 0)) - viewport.viewX(top), side, accuracy: 0.001)
-        XCTAssertEqual(side / viewport.width, 0.9, accuracy: 0.001)
+        XCTAssertEqual(side / viewport.width, 0.99, accuracy: 0.001)
 
         let tiny = LetterViewport(width: 0, height: 0)
         XCTAssertEqual(tiny.letter(x: 4, y: 4), LetterPoint(x: 0, y: 0))
@@ -570,7 +570,7 @@ final class GeometryTests: XCTestCase {
             LetterPoint(x: 0, y: 40),
             LetterPoint(x: 140, y: 40),
         ]
-        let launch = CarSimulation.run(path: straight, drawn: 1.6)
+        let launch = CarSimulation.run(path: straight)
         let early = launch.sample(at: 0.28)
         XCTAssertTrue(early.burning)
         XCTAssertLessThan(early.speed, launch.cruise * 0.45)
@@ -594,7 +594,7 @@ final class GeometryTests: XCTestCase {
             LetterPoint(x: 46, y: 70),
             LetterPoint(x: 46, y: 8),
         ]
-        let slide = CarSimulation.run(path: hairpin, drawn: 1.5)
+        let slide = CarSimulation.run(path: hairpin)
         let corner = slide.samples.filter { $0.time > CarSimulation.burnout && $0.progress > 0.25 && $0.progress < 0.85 }
         let maxSlip = corner.map(\.slip).max() ?? 0
         let maxOff = corner
@@ -602,11 +602,17 @@ final class GeometryTests: XCTestCase {
             .max() ?? 0
         XCTAssertGreaterThan(maxSlip, 0.45, "slip \(maxSlip)")
         XCTAssertGreaterThan(maxOff, 3.5, "offset \(maxOff)")
+        let approach = slide.samples.filter { !$0.burning && $0.progress > 0.30 && $0.progress < 0.43 }
+        let approachSpeed = approach.map(\.speed).max() ?? 999
+        XCTAssertLessThan(approachSpeed, slide.cruise * 0.72, "approach \(approachSpeed)")
+        let earlier = slide.samples.filter { !$0.burning && $0.progress > 0.05 && $0.progress < 0.18 }
+        let earlierSpeed = earlier.map(\.speed).max() ?? 0
+        XCTAssertGreaterThan(earlierSpeed, approachSpeed, "earlier \(earlierSpeed) approach \(approachSpeed)")
         XCTAssertGreaterThan(slide.puffs.filter { $0.time > CarSimulation.burnout }.count, 2)
         XCTAssertLessThan(slide.sample(at: slide.duration).position.distance(to: hairpin[2]), 10)
 
         let peak = LetterA.track.strokes[0].centerline
-        let apex = CarSimulation.run(path: peak, drawn: 2.0)
+        let apex = CarSimulation.run(path: peak)
         let crown = apex.samples.filter { $0.progress > 0.35 && $0.progress < 0.7 }
         let crownOff = crown
             .map { RoadGeometry.project($0.position, onto: peak, near: $0.progress).distance }

@@ -108,19 +108,19 @@ struct RaceView: View {
         return date.timeIntervalSince(motionStart)
     }
 
-    /// The ink still takes as long as the finger did. On A and a it waits out the burnout first.
+    /// Other letters still replay at the speed the finger drew. A and a follow the car,
+    /// because that car brakes and drifts on its own clock.
     private func inkMotion(elapsed: Double) -> Double {
-        let drawn = max(model.playbackDuration, 0.05)
-        if usesRacingDrive {
-            return min(1, max(0, elapsed - CarSimulation.burnout) / drawn)
+        if usesRacingDrive, let ride {
+            return min(1, max(0, ride.sample(at: elapsed).progress))
         }
+        let drawn = max(model.playbackDuration, 0.05)
         return min(1, elapsed / drawn)
     }
 
     private func completeMotionIfNeeded(_ elapsed: Double) {
         guard motionStart != nil else { return }
-        let drawn = max(model.playbackDuration, 0.05)
-        let total = usesRacingDrive ? CarSimulation.driveDuration(drawn: drawn) : drawn
+        let total = usesRacingDrive ? (ride?.duration ?? 0.35) : max(model.playbackDuration, 0.05)
         guard elapsed >= total - 0.02 else { return }
         motionStart = nil
         model.motionFinished()
@@ -136,7 +136,7 @@ struct RaceView: View {
             ride = nil
             return
         }
-        ride = CarSimulation.run(path: model.recordedPaths[index], drawn: max(model.playbackDuration, 0.35))
+        ride = CarSimulation.run(path: model.recordedPaths[index])
     }
 }
 

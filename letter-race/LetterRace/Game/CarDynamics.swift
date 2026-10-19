@@ -1,13 +1,14 @@
 import Foundation
 
-/// A toy car with traction. It does not stick to the ink.
-/// The rear wheels spin in place at the start, then the car rolls.
-/// A tight corner asks for more yaw than the tires can give, so the rear steps out.
+/// A car with its own speed. How fast the finger drew the stroke does not set the pace:
+/// the car cruises, brakes before a bend, and steps the rear out on a sharp one.
 struct CarSimulation: Equatable {
     /// Time the rear tires smoke before the car takes off.
-    static let burnout = 0.62
-    /// Extra time after the drawn stroke so a slide can hook back onto the finish.
+    static let burnout = 0.46
+    /// How long the car must sit on the finish before the ride is over.
     static let settle = 0.28
+    /// Letter units per second on a straight, whatever the drawing took.
+    static let cruiseSpeed = 42.0
 
     var duration: Double
     var cruise: Double
@@ -40,10 +41,6 @@ struct CarSimulation: Equatable {
         var position: LetterPoint
         var blowX: Double
         var blowY: Double
-    }
-
-    static func driveDuration(drawn: Double) -> Double {
-        burnout + max(drawn, 0.35) + settle
     }
 
     func sample(at time: Double) -> Sample {
@@ -87,69 +84,82 @@ struct CarSimulation: Equatable {
         )
     }
 
-    static func run(path: [LetterPoint], drawn: Double) -> CarSimulation {
-        let drawn = max(drawn, 0.35)
+    static func run(path: [LetterPoint]) -> CarSimulation {
         let total = RoadGeometry.length(of: path)
-        let duration = driveDuration(drawn: drawn)
+        let cruise = cruiseSpeed
+        let maxTime = burnout + total / 12 + 3
         guard path.count >= 2, total > 1, let initial = RoadGeometry.heading(of: path, at: 0) else {
             let only = path.first ?? LetterPoint(x: 50, y: 50)
             let still = Sample(
                 time: 0, position: only, body: 0, speed: 0, slip: 0, spin: 0, spinRate: 0,
                 burning: false, braking: false, progress: 1
             )
-            return CarSimulation(duration: duration, cruise: 0, samples: [still], skids: [], puffs: [])
+            return CarSimulation(duration: 0, cruise: cruise, samples: [still], skids: [], puffs: [])
         }
 
-        let cruise = total / drawn
         let dt = 1.0 / 60.0
         var position = path[0]
         var body = atan2(initial.y, initial.x)
         var speed = 0.0
         var lateral = 0.0
         var spin = 0.0
+        var slideHold = 0.0
+        var settledFor = 0.0
+        var sincePuff = 1.0
+        var anchor = 0.0
         var samples: [Sample] = []
         var skids: [Skid] = []
         var puffs: [Puff] = []
-        var sincePuff = 1.0
         var time = 0.0
 
-        while time <= duration + 0.0001 {
+        while time <= maxTime + 0.0001 {
             let burning = time < burnout
-            let driven = max(0, time - burnout)
-            let targetProgress = min(1, driven / drawn)
-            let lookAhead = min(1, targetProgress + (8.5 + speed * 0.05) / total)
+            let here = RoadGeometry.heading(of: path, at: anchor) ?? initial
+            let soon = RoadGeometry.heading(of: path, at: min(1, anchor + 12 / total)) ?? here
+            let later = RoadGeometry.heading(of: path, at: min(1, anchor + 30 / total)) ?? here
+            let roadTurn = wrap(angle(soon) - angle(here))
+            let earlyTurn = wrap(angle(later) - angle(here))
+            let severity = max(abs(roadTurn), abs(earlyTurn))
+
+            let cornerLimit = cruise / (1 + severity * 2.1)
+            let easing = anchor > 0.9 ? max(0, (1 - anchor) / 0.1) : 1.0
+            let wantedSpeed = burning ? 6.0 : cornerLimit * easing
+            let braking = !burning && wantedSpeed + 2 < speed
+            let accel = burning ? 20.0 : (braking ? 78.0 : 52.0)
+            speed += clamp(wantedSpeed - speed, -accel * dt, accel * dt)
+            if speed < 0 { speed = 0 }
+
+            let lookAhead = min(1, anchor + (7.5 + speed * 0.035) / total)
             let look = RoadGeometry.point(at: lookAhead, along: path)
             let desired = atan2(look.y - position.y, look.x - position.x)
             let steer = clamp(wrap(desired - body), -0.95, 0.95)
-
             let wheelbase = 8.0
             let demandedYaw = speed / wheelbase * tan(steer)
-            let maxYaw = burning ? 0.7 : 2.6
+            let maxYaw = burning ? 0.55 : 2.4
             let yaw = clamp(demandedYaw, -maxYaw, maxYaw)
             body = wrap(body + yaw * dt)
 
-            let here = RoadGeometry.heading(of: path, at: targetProgress) ?? initial
-            let ahead = RoadGeometry.heading(of: path, at: min(1, targetProgress + 16 / total)) ?? here
-            let roadTurn = wrap(atan2(ahead.y, ahead.x) - atan2(here.y, here.x))
-            let sliding = !burning && abs(roadTurn) > 0.42 && speed > 6
+            if !burning && abs(roadTurn) > 0.5 && speed > 6.5 {
+                slideHold = 0.42
+            } else {
+                slideHold = max(0, slideHold - dt)
+            }
+            let sliding = slideHold > 0 && !burning
             if sliding {
-                let outward: Double = roadTurn > 0 ? -1 : 1
-                let wanted = outward * min(12, abs(roadTurn) * 8)
-                lateral += (wanted - lateral) * min(1, 10 * dt)
+                let outward: Double
+                if roadTurn == 0 {
+                    outward = lateral >= 0 ? 1 : -1
+                } else {
+                    outward = roadTurn > 0 ? -1 : 1
+                }
+                let wanted = outward * min(11, 5 + abs(roadTurn) * 3.2)
+                lateral += (wanted - lateral) * min(1, 9 * dt)
             } else if !burning {
-                lateral *= max(0, 1 - 5.5 * dt)
+                lateral *= max(0, 1 - 6 * dt)
             }
             lateral = clamp(lateral, -12, 12)
             if burning {
                 lateral *= max(0, 1 - 4 * dt)
-            }
-
-            let wantedSpeed = burning ? min(7.5, cruise * 0.16) : (targetProgress >= 1 ? 0 : cruise)
-            let accel = burning ? 12.0 : max(80, cruise * 3.2)
-            speed += clamp(wantedSpeed - speed, -accel * dt, accel * dt)
-            if targetProgress >= 0.94 {
-                speed *= max(0, 1 - 6 * dt)
-                lateral *= max(0, 1 - 8 * dt)
             }
 
             let forwardX = cos(body)
@@ -159,18 +169,18 @@ struct CarSimulation: Equatable {
             var velocityX = forwardX * speed + sideX * lateral
             var velocityY = forwardY * speed + sideY * lateral
 
-            let nearest = RoadGeometry.project(position, onto: path, near: targetProgress)
+            let nearest = RoadGeometry.project(position, onto: path, near: anchor)
             let off = nearest.distance
-            var pull = burning ? 0.35 : (sliding ? 1.8 : 5.2)
-            if off > 9 { pull += (off - 9) * 0.9 }
-            if targetProgress > 0.93 { pull += 4 }
+            var pull = burning ? 0.4 : (sliding ? 1.4 : 6.0)
+            if off > 9 { pull += (off - 9) * 1.2 }
+            if anchor > 0.93 { pull += 6 }
             velocityX += (nearest.closest.x - position.x) * pull * dt
             velocityY += (nearest.closest.y - position.y) * pull * dt
 
             position.x += velocityX * dt
             position.y += velocityY * dt
 
-            let settled = RoadGeometry.project(position, onto: path, near: targetProgress)
+            let settled = RoadGeometry.project(position, onto: path, near: anchor)
             if settled.distance > 8.2 {
                 let keep = 8.2 / settled.distance
                 position.x = settled.closest.x + (position.x - settled.closest.x) * keep
@@ -178,18 +188,20 @@ struct CarSimulation: Equatable {
                 lateral *= 0.7
             }
 
-            if targetProgress >= 1, let finish = path.last {
-                let catchUp = min(1, 7 * dt)
+            if anchor > 0.92, let finish = path.last {
+                let catchUp = min(1, (anchor > 0.97 ? 9 : 2.5) * dt)
                 position.x += (finish.x - position.x) * catchUp
                 position.y += (finish.y - position.y) * catchUp
             }
+
+            let placed = RoadGeometry.project(position, onto: path, near: anchor)
+            anchor = placed.progress
 
             let velocityAngle = atan2(velocityY, velocityX)
             let moving = hypot(velocityX, velocityY) > 1
             let slip = moving ? min(1, abs(wrap(body - velocityAngle)) / 0.9) : 0
             let spinRate = burning ? 24.0 : max(3.5, speed * 0.7)
             spin += spinRate * dt
-            let braking = targetProgress > 0.9 && !burning
 
             let rear = LetterPoint(
                 x: position.x - forwardX * 5.4,
@@ -215,7 +227,6 @@ struct CarSimulation: Equatable {
                 ))
             }
 
-            let progress = RoadGeometry.project(position, onto: path, near: targetProgress).progress
             samples.append(Sample(
                 time: time,
                 position: position,
@@ -226,12 +237,24 @@ struct CarSimulation: Equatable {
                 spinRate: spinRate,
                 burning: burning,
                 braking: braking,
-                progress: progress
+                progress: anchor
             ))
+
+            if let finish = path.last, anchor > 0.97, position.distance(to: finish) < 4 {
+                settledFor += dt
+                if settledFor >= settle { break }
+            } else {
+                settledFor = 0
+            }
             time += dt
         }
 
+        let duration = samples.last?.time ?? 0
         return CarSimulation(duration: duration, cruise: cruise, samples: samples, skids: skids, puffs: puffs)
+    }
+
+    private static func angle(_ heading: LetterPoint) -> Double {
+        atan2(heading.y, heading.x)
     }
 
     private static func wrap(_ angle: Double) -> Double {
