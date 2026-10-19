@@ -6,6 +6,17 @@ import XCTest
 #endif
 
 final class GeometryTests: XCTestCase {
+    func testFinishZoneMiddleIsBetweenTheHatches() {
+        let marks = FinishZone.offsets
+        XCTAssertEqual(marks.count, 6)
+        XCTAssertLessThan(marks[0], 0)
+        XCTAssertGreaterThan(marks[marks.count - 1], 0)
+        XCTAssertEqual(FinishZone.middleOffset, (marks[0] + marks[marks.count - 1]) / 2, accuracy: 0.001)
+        let stroke = LetterA.track.strokes[0]
+        let middle = FinishZone.middle(on: stroke)
+        XCTAssertGreaterThan(middle.distance(to: stroke.gate.center), 0)
+    }
+
     func testProjectionOntoSegment() {
         let line = [LetterPoint(x: 0, y: 0), LetterPoint(x: 10, y: 0)]
         let beside = RoadGeometry.project(LetterPoint(x: 5, y: 4), onto: line)
@@ -129,7 +140,7 @@ final class GeometryTests: XCTestCase {
         }
         XCTAssertEqual(model.wallHits, 3)
         XCTAssertEqual(model.phase, .tracing)
-        model.release(at: stroke.gate.center)
+        model.release(at: FinishZone.middle(on: stroke))
         XCTAssertEqual(model.phase, .almost)
         XCTAssertEqual(model.shownStars, 1)
         XCTAssertTrue(model.recordedPaths.isEmpty)
@@ -165,13 +176,11 @@ final class GeometryTests: XCTestCase {
         let stroke = model.activeStroke!
         let shifted = offset(stroke, by: 6)
         model.press(at: stroke.start)
-        for (index, sample) in shifted.enumerated() {
-            if index == shifted.count - 1 {
-                model.release(at: sample)
-            } else {
-                model.move(to: sample)
-            }
+        for sample in shifted {
+            model.move(to: sample)
         }
+        XCTAssertEqual(model.phase, .tracing)
+        model.release(at: FinishZone.middle(on: stroke))
         XCTAssertEqual(model.phase, .almost)
         XCTAssertEqual(model.shownStars, 1)
         XCTAssertTrue(model.recordedPaths.isEmpty)
@@ -245,9 +254,14 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(model.phase, .tracing)
 
         model.move(to: stroke.gate.center, time: 2.6)
+        XCTAssertEqual(model.phase, .tracing)
+
+        let middle = FinishZone.middle(on: stroke)
+        let past = FinishZone.point(on: stroke, offset: FinishZone.middleOffset + 6)
+        model.move(to: past, time: 2.9)
         XCTAssertEqual(model.phase, .driving)
         let last = model.recordedPaths[0].last
-        XCTAssertEqual(last?.distance(to: stroke.gate.center) ?? 99, 0, accuracy: 0.001)
+        XCTAssertEqual(last?.distance(to: middle) ?? 99, 0, accuracy: 0.001)
     }
 
     func testReachingTheFinishStopsTheLine() {
@@ -258,10 +272,12 @@ final class GeometryTests: XCTestCase {
             let progress = Double(step) / 20
             model.move(to: point(progress, on: stroke), time: 5 + 2 * progress)
         }
+        XCTAssertEqual(model.phase, .tracing)
+        model.move(to: FinishZone.middle(on: stroke), time: 7.4)
         XCTAssertEqual(model.phase, .driving)
         let kept = model.recordedPaths[0].count
         let drawnFor = model.recordedDurations[0]
-        XCTAssertEqual(drawnFor, 1.9, accuracy: 0.05)
+        XCTAssertEqual(drawnFor, 2.4, accuracy: 0.05)
         XCTAssertEqual(model.playbackDuration, drawnFor, accuracy: 0.001)
 
         model.move(to: point(0.3, on: stroke), time: 9)
@@ -304,7 +320,7 @@ final class GeometryTests: XCTestCase {
         var model = RaceModel(glyph: playableA)
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
-        model.release(at: stroke.gate.center)
+        model.release(at: FinishZone.middle(on: stroke))
         XCTAssertEqual(model.phase, .awaiting)
         XCTAssertTrue(model.recordedPaths.isEmpty)
     }
@@ -410,12 +426,8 @@ final class GeometryTests: XCTestCase {
     private func trace(_ model: inout RaceModel, along stroke: LetterStroke) {
         model.press(at: stroke.start)
         for step in 1...20 {
-            let sample = point(Double(step) / 20, on: stroke)
-            if step == 20 {
-                model.release(at: sample)
-            } else {
-                model.move(to: sample)
-            }
+            model.move(to: point(Double(step) / 20, on: stroke))
         }
+        model.release(at: FinishZone.middle(on: stroke))
     }
 }

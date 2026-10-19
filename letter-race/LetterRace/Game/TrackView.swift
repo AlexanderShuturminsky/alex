@@ -104,17 +104,20 @@ struct TrackView: View {
         guard let track = model.track else { return }
         let half = track.roadHalfWidth
         for stroke in track.strokes {
-            strokeRoad(stroke.centerline, width: (half * 2 + 2.4) * viewport.scale, color: TrackPalette.edge, viewport: viewport, context: context)
+            let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
+            strokeRoad(paved, width: (half * 2 + 2.4) * viewport.scale, color: TrackPalette.edge, viewport: viewport, context: context)
         }
         for stroke in track.strokes {
-            strokeRoad(stroke.centerline, width: half * 2 * viewport.scale, color: TrackPalette.road, viewport: viewport, context: context)
+            let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
+            strokeRoad(paved, width: half * 2 * viewport.scale, color: TrackPalette.road, viewport: viewport, context: context)
         }
         for (index, stroke) in track.strokes.enumerated() {
             let alpha = hintAlpha(index)
             if alpha <= 0.01 { continue }
             let strength = index == highlightedIndex ? 0.62 : 0.34
+            let guide = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.middleOffset)
             strokeRoad(
-                stroke.centerline,
+                guide,
                 width: half * 0.95 * viewport.scale,
                 color: TrackPalette.hint.opacity(strength * alpha),
                 viewport: viewport,
@@ -165,8 +168,8 @@ struct TrackView: View {
         let center = cg(end, viewport)
         let half = CGFloat(viewport.scale * (model.track?.roadHalfWidth ?? 9) * 0.95)
         var path = Path()
-        for tick in 0..<6 {
-            let along = CGFloat((Double(tick) - 1.2) * viewport.scale * 2.0)
+        for offset in FinishZone.offsets {
+            let along = CGFloat(offset * viewport.scale)
             let cx = center.x + CGFloat(cos(angle)) * along
             let cy = center.y + CGFloat(sin(angle)) * along
             let px = CGFloat(cos(angle + .pi / 2))

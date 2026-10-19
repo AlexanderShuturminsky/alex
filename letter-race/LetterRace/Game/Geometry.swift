@@ -197,6 +197,43 @@ enum RoadGeometry {
     }
 }
 
+/// The hatched band at the end of a stroke. Offsets are letter units along the road
+/// heading: negative is before the gate, positive is past it.
+enum FinishZone {
+    static let spacing = 2.0
+    static let firstTick = -1.2
+    static let count = 6
+
+    static var offsets: [Double] {
+        (0..<count).map { (Double($0) + firstTick) * spacing }
+    }
+
+    static var middleOffset: Double {
+        let marks = offsets
+        return ((marks.first ?? 0) + (marks.last ?? 0)) / 2
+    }
+
+    static var endOffset: Double {
+        offsets.last ?? 0
+    }
+
+    static func point(on stroke: LetterStroke, offset: Double) -> LetterPoint {
+        let gate = stroke.gate.center
+        guard let heading = RoadGeometry.heading(of: stroke.centerline, at: 1) else { return gate }
+        return LetterPoint(x: gate.x + heading.x * offset, y: gate.y + heading.y * offset)
+    }
+
+    static func middle(on stroke: LetterStroke) -> LetterPoint {
+        point(on: stroke, offset: middleOffset)
+    }
+
+    static func extended(_ centerline: [LetterPoint], on stroke: LetterStroke, through offset: Double) -> [LetterPoint] {
+        var line = centerline
+        line.append(point(on: stroke, offset: offset))
+        return line
+    }
+}
+
 struct StrokeAccuracy: Equatable {
     var closeness: Double
     var stars: Int

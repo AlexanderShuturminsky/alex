@@ -12,7 +12,7 @@ Beginners are taught a print capital A as three separate strokes, every one star
 2. From the top, down to the bottom-right foot
 3. The crossbar, left to right, where the middle of the letter meets the two legs
 
-Each stroke is one car. A pulsing arrow sits behind the next car and points along the stroke. There is no instruction text. A sharp corner, or going backward, stops the stroke. The line has to reach the hatched finish; it does not end early. More than three wall hits ends it as well. The car launches only when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. The replay drives each stroke for as long as the finger took to draw it.
+Each stroke is one car. A pulsing arrow sits behind the next car and points along the stroke. There is no instruction text. A sharp corner, or going backward, stops the stroke. The ink ends in the middle of the hatched finish. More than three wall hits ends it as well. The car launches only when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. The replay drives each stroke for as long as the finger took to draw it.
 
 Each unfinished stroke shows a faint path down the middle of the road. That hint fades away once its car reaches the finish. The race screen turns off the system swipe-back, including the iOS 26 swipe that starts anywhere on the page. That gesture was grabbing the crossbar, the only left-to-right stroke. The back button still leaves the race.
 

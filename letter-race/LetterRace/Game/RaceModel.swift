@@ -29,8 +29,6 @@ struct RaceModel: Equatable {
     static let maxWallHits = 3
     static let carReach = 12.0
     static let minimumTravel = 0.62
-    /// The finger has to be this close to the hatched gate before the stroke counts.
-    static let finishReach = 5.0
     /// How far the finger must travel before a backward start counts.
     static let directionSample = 6.0
     /// Opening the stroke this far against its heading ends the attempt.
@@ -90,8 +88,8 @@ struct RaceModel: Equatable {
         let projection = RoadGeometry.project(point, onto: stroke.centerline)
         let inside = projection.distance <= track.roadHalfWidth
 
-        if reachedFinish(point, progress: projection.progress, halfWidth: track.roadHalfWidth, on: stroke) {
-            currentTrace.append(point)
+        if reachedFinish(point, halfWidth: track.roadHalfWidth, on: stroke) {
+            currentTrace.append(FinishZone.middle(on: stroke))
             finishStroke(at: time)
             return
         }
@@ -179,21 +177,19 @@ struct RaceModel: Equatable {
         clearAttempt()
     }
 
-    /// The hatches are the finish. Stopping at 80% of the road left the ink short of them,
-    /// and treating any slip behind the furthest point as a reverse did the same.
+    /// The ink stops at the middle stripe, not at the near edge of the hatches.
     private func reachedFinish(
         _ point: LetterPoint,
-        progress: Double,
         halfWidth: Double,
         on stroke: LetterStroke
     ) -> Bool {
         guard maxProgress >= Self.minimumTravel else { return false }
+        guard let heading = RoadGeometry.heading(of: stroke.centerline, at: 1) else { return false }
         let gate = stroke.gate.center
-        if point.distance(to: gate) <= Self.finishReach { return true }
-        guard let heading = RoadGeometry.heading(of: stroke.centerline, at: progress) else { return false }
         let along = (point.x - gate.x) * heading.x + (point.y - gate.y) * heading.y
         let lateral = abs((point.x - gate.x) * -heading.y + (point.y - gate.y) * heading.x)
-        return lateral <= halfWidth && along >= -Self.finishReach
+        // A hair of slack so the exact middle stripe is not missed by rounding.
+        return lateral <= halfWidth && along >= FinishZone.middleOffset - 0.05
     }
 
     /// A sharp corner, or a sustained move well off the stroke direction, ends the ink.
