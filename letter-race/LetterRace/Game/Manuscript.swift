@@ -35,24 +35,41 @@ enum Manuscript {
         oval(center: center, radiusX: radius, radiusY: radius, fromDeg: fromDeg, toDeg: toDeg, steps: steps)
     }
 
-    /// Right-hand bowl: a tall semi-oval from `top` around to `bottom`, bulging right.
+    /// Manuscript bowl: leave the stem, round the right side in a half circle, and come back.
+    /// `reach` is how far the outer edge sits from the stem. The end stays a true half circle.
     static func rightBowl(
         top: LetterPoint,
         bottom: LetterPoint,
         reach: Double,
-        steps: Int = 16
+        steps: Int = 12
     ) -> [LetterPoint] {
-        let center = LetterPoint(x: (top.x + bottom.x) / 2, y: (top.y + bottom.y) / 2)
-        var line = oval(
-            center: center,
-            radiusX: max(reach, 0.001),
-            radiusY: max(abs(bottom.y - top.y) / 2, 0.001),
+        let height = max(abs(bottom.y - top.y), 0.001)
+        let radius = height / 2
+        let midY = (top.y + bottom.y) / 2
+        let straight = max(0, reach - radius)
+        let capCenter = LetterPoint(x: top.x + straight, y: midY)
+        let cap = oval(
+            center: capCenter,
+            radiusX: radius,
+            radiusY: radius,
             fromDeg: 0,
             toDeg: -180,
             steps: steps
         )
-        line[0] = top
-        line[line.count - 1] = bottom
+        var line: [LetterPoint] = [top]
+        if straight > 1 {
+            appendDistinct(LetterPoint(x: top.x + straight, y: top.y), to: &line)
+            for point in cap.dropFirst() {
+                appendDistinct(point, to: &line)
+            }
+            appendDistinct(bottom, to: &line)
+        } else {
+            for point in cap {
+                appendDistinct(point, to: &line)
+            }
+            line[0] = top
+            line[line.count - 1] = bottom
+        }
         return line
     }
 
@@ -222,98 +239,98 @@ enum Manuscript {
     }
 }
 
-/// Lowercase a: a tall oval from the top, counterclockwise, then the stem down.
+/// Lowercase a: a slightly tall oval from the top, counterclockwise, then the stem down.
 enum LetterSmallA {
     static let track = Manuscript.track(
         strokes: [
             Manuscript.oval(
-                center: LetterPoint(x: 40, y: 62),
-                radiusX: 16,
-                radiusY: 22,
-                fromDeg: -25,
-                toDeg: 335,
+                center: LetterPoint(x: 36, y: 62),
+                radiusX: 18,
+                radiusY: 23,
+                fromDeg: -20,
+                toDeg: 340,
                 steps: 24
             ),
-            [LetterPoint(x: 56, y: 44), LetterPoint(x: 56, y: 88)],
+            [LetterPoint(x: 54, y: 42), LetterPoint(x: 54, y: 88)],
         ],
-        half: 12,
+        half: 8,
         fitSpan: Manuscript.span(of: LetterA.track.strokes.map(\.centerline)) * 0.85
     )
 }
 
 /// Capital B: the stem down, then both bowls in one curve from the top.
-/// Each bowl is a tall oval, so the right side is round and the waist can fold back.
+/// The lower bowl is a little larger. Each right side is a half circle, like the chart.
 enum LetterB {
-    private static let stemTop = LetterPoint(x: 30, y: 12)
-    private static let waist = LetterPoint(x: 30, y: 48)
-    private static let stemBottom = LetterPoint(x: 30, y: 90)
+    private static let stemTop = LetterPoint(x: 24, y: 14)
+    private static let waist = LetterPoint(x: 24, y: 48)
+    private static let stemBottom = LetterPoint(x: 24, y: 90)
 
     static let track = Manuscript.track(
         strokes: [
             [stemTop, stemBottom],
-            Manuscript.rightBowl(top: stemTop, bottom: waist, reach: 13)
-                + Manuscript.rightBowl(top: waist, bottom: stemBottom, reach: 16).dropFirst(),
+            Manuscript.rightBowl(top: stemTop, bottom: waist, reach: 32)
+                + Manuscript.rightBowl(top: waist, bottom: stemBottom, reach: 40).dropFirst(),
         ],
-        half: 12
+        half: 10
     )
 }
 
 /// Lowercase b: the tall stem down, then a round bowl out to the right.
 enum LetterSmallB {
-    private static let bowlTop = LetterPoint(x: 34, y: 46)
-    private static let bowlBottom = LetterPoint(x: 34, y: 84)
+    private static let bowlTop = LetterPoint(x: 30, y: 46)
+    private static let bowlBottom = LetterPoint(x: 30, y: 88)
 
     static let track = Manuscript.track(
         strokes: [
-            [LetterPoint(x: 34, y: 12), bowlBottom],
-            Manuscript.rightBowl(top: bowlTop, bottom: bowlBottom, reach: 14),
+            [LetterPoint(x: 30, y: 8), bowlBottom],
+            Manuscript.rightBowl(top: bowlTop, bottom: bowlBottom, reach: 36),
         ],
-        half: 11,
+        half: 9,
         fitSpan: Manuscript.span(of: LetterB.track.strokes.map(\.centerline)) * 0.85
     )
 }
 
-/// Capital Q: a tall oval counterclockwise from the upper right, then a short tail.
+/// Capital Q: a slightly tall oval counterclockwise from the upper right, then a short tail.
 enum LetterQ {
     static let track = Manuscript.track(
         strokes: [
             Manuscript.oval(
-                center: LetterPoint(x: 48, y: 46),
-                radiusX: 22,
+                center: LetterPoint(x: 46, y: 44),
+                radiusX: 24,
                 radiusY: 30,
                 fromDeg: -40,
                 toDeg: 320,
                 steps: 28
             ),
             Manuscript.bend(
-                from: LetterPoint(x: 58, y: 64),
-                through: LetterPoint(x: 68, y: 76),
-                to: LetterPoint(x: 78, y: 88)
+                from: LetterPoint(x: 56, y: 60),
+                through: LetterPoint(x: 66, y: 74),
+                to: LetterPoint(x: 76, y: 90)
             ),
         ],
-        half: 12
+        half: 9
     )
 }
 
-/// Lowercase q: a tall oval, then a descender with a small hook.
+/// Lowercase q: a slightly tall oval, then a descender with a small hook.
 enum LetterSmallQ {
     static let track = Manuscript.track(
         strokes: [
             Manuscript.oval(
-                center: LetterPoint(x: 40, y: 54),
-                radiusX: 14,
-                radiusY: 19,
+                center: LetterPoint(x: 38, y: 50),
+                radiusX: 16,
+                radiusY: 20,
                 fromDeg: -20,
                 toDeg: 340,
                 steps: 22
             ),
             Manuscript.bend(
-                from: LetterPoint(x: 54, y: 42),
-                through: LetterPoint(x: 54, y: 84),
-                to: LetterPoint(x: 66, y: 92)
+                from: LetterPoint(x: 54, y: 36),
+                through: LetterPoint(x: 54, y: 78),
+                to: LetterPoint(x: 68, y: 92)
             ),
         ],
-        half: 11,
+        half: 8,
         fitSpan: Manuscript.span(of: LetterQ.track.strokes.map(\.centerline)) * 0.85
     )
 }
@@ -324,16 +341,16 @@ enum LetterW {
         strokes: [
             Manuscript.softened(
                 [
-                    LetterPoint(x: 14, y: 16),
-                    LetterPoint(x: 32, y: 88),
-                    LetterPoint(x: 50, y: 34),
-                    LetterPoint(x: 68, y: 88),
-                    LetterPoint(x: 86, y: 16),
+                    LetterPoint(x: 8, y: 34),
+                    LetterPoint(x: 30, y: 84),
+                    LetterPoint(x: 50, y: 50),
+                    LetterPoint(x: 70, y: 84),
+                    LetterPoint(x: 92, y: 34),
                 ],
                 radius: 2
             ),
         ],
-        half: 9
+        half: 7
     )
 }
 
@@ -343,16 +360,16 @@ enum LetterSmallW {
         strokes: [
             Manuscript.softened(
                 [
-                    LetterPoint(x: 16, y: 48),
-                    LetterPoint(x: 32, y: 84),
+                    LetterPoint(x: 8, y: 46),
+                    LetterPoint(x: 28, y: 84),
                     LetterPoint(x: 50, y: 58),
-                    LetterPoint(x: 68, y: 84),
-                    LetterPoint(x: 84, y: 48),
+                    LetterPoint(x: 72, y: 84),
+                    LetterPoint(x: 92, y: 46),
                 ],
-                radius: 1.5
+                radius: 2
             ),
         ],
-        half: 8,
+        half: 7,
         fitSpan: Manuscript.span(of: LetterW.track.strokes.map(\.centerline)) * 0.85
     )
 }

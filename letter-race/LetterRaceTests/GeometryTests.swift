@@ -210,15 +210,16 @@ final class GeometryTests: XCTestCase {
         let waist = bowls[bowls.count / 2]
         XCTAssertGreaterThan(sharpestCornerDot(on: bowls, skippingAround: waist), 0.90)
         let rightmost = bowls.max { $0.x < $1.x }!
-        XCTAssertGreaterThan(rightmost.x, waist.x + 12)
-        XCTAssertLessThan(rightmost.x, waist.x + 22)
+        let bowlSize = bounds(of: bowls)
+        XCTAssertGreaterThan(bowlSize.height, bowlSize.width)
+        XCTAssertGreaterThan(rightmost.x - bowls[0].x, LetterB.track.roadHalfWidth * 2 + 8)
 
         let zigzag = LetterW.track.strokes[0].centerline
-        let valley = LetterPoint(x: 32, y: 88)
+        let valley = LetterPoint(x: 30, y: 84)
         XCTAssertFalse(zigzag.contains(valley))
         let rounded = RoadGeometry.project(valley, onto: zigzag).distance
-        XCTAssertGreaterThan(rounded, 3)
-        XCTAssertLessThan(rounded, 9)
+        XCTAssertGreaterThan(rounded, 1.2)
+        XCTAssertLessThan(rounded, 8)
         XCTAssertLessThan(
             RoadGeometry.project(LetterA.apex, onto: LetterA.track.strokes[0].centerline).distance,
             6

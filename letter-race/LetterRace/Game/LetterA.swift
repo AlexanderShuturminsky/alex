@@ -4,11 +4,11 @@ import Foundation
 /// Stroke 1 is one move: bottom-left, up over a lightly rounded apex, down to the bottom-right.
 /// The apex is not a pen lift. Stroke 2 is the crossbar, left to right.
 enum LetterA {
-    static let roadHalfWidth = 13.0
+    static let roadHalfWidth = 10.0
 
-    static let apex = LetterPoint(x: 50, y: 14)
-    static let leftFoot = LetterPoint(x: 16, y: 90)
-    static let rightFoot = LetterPoint(x: 84, y: 90)
+    static let apex = LetterPoint(x: 50, y: 12)
+    static let leftFoot = LetterPoint(x: 22, y: 90)
+    static let rightFoot = LetterPoint(x: 78, y: 90)
 
     static let track: LetterTrack = {
         let barY = (apex.y + leftFoot.y) / 2
