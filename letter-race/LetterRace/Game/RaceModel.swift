@@ -94,7 +94,7 @@ struct RaceModel: Equatable {
             return
         }
 
-        if turnedSharply(point, projection: projection, inside: inside, on: stroke) {
+        if turnedSharply(point, projection: projection, inside: inside, halfWidth: track.roadHalfWidth, on: stroke) {
             currentTrace = []
             shownStars = 0
             phase = .failed
@@ -196,28 +196,61 @@ struct RaceModel: Equatable {
     }
 
     /// A sharp corner, or a sustained move back along the stroke, ends the ink.
-    /// Folding back is allowed when that fold is the letter itself: the finger is still
-    /// moving forward along the road, as in the middle of B or around Q.
+    /// On a bent letter the road itself turns around, as in the middle of B, so that
+    /// opposite direction is allowed while the finger is following the road ahead.
     private func turnedSharply(
         _ point: LetterPoint,
         projection: RoadProjection,
         inside: Bool,
+        halfWidth: Double,
         on stroke: LetterStroke
     ) -> Bool {
         if openedBackward(point, on: stroke) { return true }
-        // A bend that stays on the road is the letter, as in W or the bowls of B.
-        if inside && projection.progress + 0.02 >= maxProgress && !roadIsStraight(stroke) {
-            return false
-        }
         let samples = currentTrace + [point]
         guard let recent = course(span: Self.cornerSpan, skip: 0, in: samples) else { return false }
+
+        if !roadIsStraight(stroke) {
+            if inside && projection.progress + 0.05 >= maxProgress { return false }
+            if followsUpcomingBend(point, course: recent, halfWidth: halfWidth, on: stroke) { return false }
+            guard projection.progress + 0.04 < maxProgress,
+                  let heading = RoadGeometry.heading(of: stroke.centerline, at: projection.progress) else {
+                return false
+            }
+            let aligned = recent.x * heading.x + recent.y * heading.y
+            return aligned < Self.cornerDot
+        }
+
         if let heading = RoadGeometry.heading(of: stroke.centerline, at: maxProgress) {
             let aligned = recent.x * heading.x + recent.y * heading.y
             if aligned < Self.cornerDot { return true }
         }
-        if roadIsStraight(stroke), let earlier = course(span: Self.cornerSpan, skip: Self.cornerSpan, in: samples) {
+        if let earlier = course(span: Self.cornerSpan, skip: Self.cornerSpan, in: samples) {
             let turn = recent.x * earlier.x + recent.y * earlier.y
             if turn < Self.cornerDot { return true }
+        }
+        return false
+    }
+
+    /// The finger is heading along a later part of this stroke, so the letter is folding back.
+    private func followsUpcomingBend(
+        _ point: LetterPoint,
+        course recent: LetterPoint,
+        halfWidth: Double,
+        on stroke: LetterStroke
+    ) -> Bool {
+        let line = stroke.centerline
+        let total = RoadGeometry.length(of: line)
+        guard total > 0 else { return false }
+        let reach = halfWidth * 1.25
+        var progress = max(0, maxProgress - 0.03)
+        while progress <= 1 {
+            let sample = RoadGeometry.point(at: progress, along: line)
+            if sample.distance(to: point) <= reach,
+               let heading = RoadGeometry.heading(of: line, at: progress) {
+                let aligned = recent.x * heading.x + recent.y * heading.y
+                if aligned >= Self.cornerDot { return true }
+            }
+            progress += max(0.015, 5 / total)
         }
         return false
     }

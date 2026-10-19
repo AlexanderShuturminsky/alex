@@ -148,6 +148,34 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(model.wallHits, 0)
     }
 
+    func testWaistOfBCanTurnTheOppositeWay() {
+        var model = RaceModel(glyph: GlyphCatalog.glyph(id: "B")!)
+        trace(&model, along: model.track!.strokes[0])
+        model.motionFinished()
+        let bowl = model.activeStroke!
+        model.press(at: bowl.start)
+        let finger: [LetterPoint] = [
+            LetterPoint(x: 48, y: 16),
+            LetterPoint(x: 62, y: 28),
+            LetterPoint(x: 52, y: 34),
+            LetterPoint(x: 40, y: 40),
+            LetterPoint(x: 32, y: 48),
+            LetterPoint(x: 36, y: 54),
+            LetterPoint(x: 52, y: 60),
+            LetterPoint(x: 68, y: 72),
+            LetterPoint(x: 58, y: 84),
+            LetterPoint(x: 40, y: 88),
+            LetterPoint(x: 30, y: 88),
+        ]
+        for point in finger {
+            model.move(to: point)
+            XCTAssertEqual(model.phase, .tracing, "stopped at \(point)")
+        }
+        model.release(at: FinishZone.middle(on: bowl))
+        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.wallHits, 0)
+    }
+
     func testLetterAFollowsTheChart() {
         let track = LetterA.track
         XCTAssertEqual(track.strokes.map(\.id), [1, 2])
