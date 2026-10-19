@@ -26,24 +26,20 @@ struct DirectionMark: Equatable {
 struct LetterViewport: Equatable {
     var width: Double
     var height: Double
-    /// Margin on each edge, as a fraction of that edge. The letter fills the rest, so a
-    /// margin of 0.05 uses 90% of the screen in both directions and stretches it taller.
+    /// Margin on each edge, as a fraction of that edge. One scale keeps the letter's
+    /// own height, and the letter fills most of the screen's width.
     var margin: Double = 0.05
 
-    var scaleX: Double {
-        let available = max(0, width * (1 - margin * 2))
-        guard available > 0, width > 0 else { return 0 }
-        return available / 100
-    }
+    var scaleX: Double { scale }
+    var scaleY: Double { scale }
 
-    var scaleY: Double {
-        let available = max(0, height * (1 - margin * 2))
-        guard available > 0, height > 0 else { return 0 }
-        return available / 100
+    /// Points per letter unit. The same on both axes, sized to the side that fits.
+    var scale: Double {
+        let availableWidth = max(0, width * (1 - margin * 2))
+        let availableHeight = max(0, height * (1 - margin * 2))
+        guard availableWidth > 0, availableHeight > 0 else { return 0 }
+        return min(availableWidth, availableHeight) / 100
     }
-
-    /// Points per letter unit for round marks. The narrower axis, so a car stays on the road.
-    var scale: Double { min(scaleX, scaleY) }
 
     var originX: Double { (width - 100 * scaleX) / 2 }
     var originY: Double { (height - 100 * scaleY) / 2 }

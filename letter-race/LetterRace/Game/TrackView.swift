@@ -119,7 +119,7 @@ struct TrackView: View {
             let guide = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.middleOffset)
             strokeRoad(
                 guide,
-                width: half * 0.95 * viewport.scale,
+                width: half * 0.34 * viewport.scale,
                 color: TrackPalette.hint.opacity(strength * alpha),
                 viewport: viewport,
                 context: context
@@ -238,8 +238,8 @@ struct TrackView: View {
     private func chevronItems(viewport: LetterViewport, time: TimeInterval) -> [ChevronItem] {
         guard let track = model.track else { return [] }
         let half = track.roadHalfWidth
-        let along = CGFloat(max(16, viewport.scale * half * 1.15))
-        let across = CGFloat(max(14, viewport.scale * half * 0.95))
+        let along = CGFloat(max(14, viewport.scale * half * 0.72))
+        let across = CGFloat(max(12, viewport.scale * half * 0.55))
         var items: [ChevronItem] = []
         for (index, stroke) in track.strokes.enumerated() {
             let drawn = drawnProgress(for: index)

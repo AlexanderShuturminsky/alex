@@ -80,8 +80,7 @@ final class GeometryTests: XCTestCase {
 
     func testViewportRoundTrip() {
         let viewport = LetterViewport(width: 200, height: 400)
-        XCTAssertEqual(viewport.scaleX, 1.8, accuracy: 0.001)
-        XCTAssertEqual(viewport.scaleY, 3.6, accuracy: 0.001)
+        XCTAssertEqual(viewport.scaleX, viewport.scaleY, accuracy: 0.001)
         XCTAssertEqual(viewport.scale, 1.8, accuracy: 0.001)
         let center = LetterPoint(x: 50, y: 50)
         XCTAssertEqual(viewport.viewX(center), 100, accuracy: 0.001)
@@ -91,8 +90,9 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(back.y, center.y, accuracy: 0.001)
         let top = LetterPoint(x: 0, y: 0)
         let bottom = LetterPoint(x: 0, y: 100)
-        let tall = viewport.viewY(bottom) - viewport.viewY(top)
-        XCTAssertEqual(tall / viewport.height, 0.9, accuracy: 0.001)
+        let side = viewport.viewY(bottom) - viewport.viewY(top)
+        XCTAssertEqual(viewport.viewX(LetterPoint(x: 100, y: 0)) - viewport.viewX(top), side, accuracy: 0.001)
+        XCTAssertEqual(side / viewport.width, 0.9, accuracy: 0.001)
 
         let tiny = LetterViewport(width: 0, height: 0)
         XCTAssertEqual(tiny.letter(x: 4, y: 4), LetterPoint(x: 0, y: 0))
