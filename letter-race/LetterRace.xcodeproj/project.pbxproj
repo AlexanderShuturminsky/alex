@@ -22,6 +22,7 @@
 		A1000000000000000000B00D /* Manuscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00D /* Manuscript.swift */; };
 		A1000000000000000000B00E /* LevelProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00E /* LevelProgress.swift */; };
 		A1000000000000000000B00F /* ProgressStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00F /* ProgressStore.swift */; };
+		A1000000000000000000B010 /* CarDynamics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F010 /* CarDynamics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 		A1000000000000000000F00D /* Manuscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Manuscript.swift; sourceTree = "<group>"; };
 		A1000000000000000000F00E /* LevelProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelProgress.swift; sourceTree = "<group>"; };
 		A1000000000000000000F00F /* ProgressStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressStore.swift; sourceTree = "<group>"; };
+		A1000000000000000000F010 /* CarDynamics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarDynamics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +115,7 @@
 				A1000000000000000000F00E /* LevelProgress.swift */,
 				A1000000000000000000F007 /* Geometry.swift */,
 				A1000000000000000000F008 /* RaceModel.swift */,
+				A1000000000000000000F010 /* CarDynamics.swift */,
 				A1000000000000000000F009 /* TrackView.swift */,
 				A1000000000000000000F00A /* TouchCapture.swift */,
 			);
@@ -228,6 +231,7 @@
 				A1000000000000000000B00F /* ProgressStore.swift in Sources */,
 				A1000000000000000000B007 /* Geometry.swift in Sources */,
 				A1000000000000000000B008 /* RaceModel.swift in Sources */,
+				A1000000000000000000B010 /* CarDynamics.swift in Sources */,
 				A1000000000000000000B009 /* TrackView.swift in Sources */,
 				A1000000000000000000B00A /* TouchCapture.swift in Sources */,
 			);

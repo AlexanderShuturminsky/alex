@@ -4,6 +4,7 @@ struct RaceView: View {
     @EnvironmentObject private var progress: ProgressStore
     @State private var model: RaceModel
     @State private var motionStart: Date?
+    @State private var ride: CarSimulation?
     @State private var almostToken = 0
 
     init(glyph: Glyph) {
@@ -12,11 +13,14 @@ struct RaceView: View {
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionStart == nil)) { timeline in
-            let motion = motionProgress(at: timeline.date)
+            let elapsed = elapsedTime(at: timeline.date)
+            let motion = inkMotion(elapsed: elapsed)
             ZStack {
                 TrackView(
                     model: model,
                     motion: motion,
+                    ride: ride,
+                    driveTime: elapsed,
                     onBegin: { model.press(at: $0, time: $1) },
                     onMove: { model.move(to: $0, time: $1) },
                     onEnd: { model.release(at: $0, time: $1) },
@@ -53,7 +57,7 @@ struct RaceView: View {
                 .padding(.top, 4)
                 .allowsHitTesting(model.phase == .success)
             }
-            .onChange(of: motion) { _, newValue in
+            .onChange(of: elapsed) { _, newValue in
                 completeMotionIfNeeded(newValue)
             }
         }
@@ -61,6 +65,7 @@ struct RaceView: View {
         .navigationTitle(model.glyph.symbol)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.phase) { _, phase in
+            rebuildRide()
             if phase == .driving || phase == .replaying {
                 motionStart = .now
             }
@@ -78,6 +83,7 @@ struct RaceView: View {
             }
         }
         .onChange(of: model.replayIndex) { _, _ in
+            rebuildRide()
             if model.phase == .replaying {
                 motionStart = .now
             }
@@ -93,16 +99,44 @@ struct RaceView: View {
         }
     }
 
-    private func motionProgress(at date: Date) -> Double {
-        guard let motionStart else { return 0 }
-        let duration = max(model.playbackDuration, 0.05)
-        return min(1, date.timeIntervalSince(motionStart) / duration)
+    private var usesRacingDrive: Bool {
+        model.glyph.id == "A" || model.glyph.id == "a"
     }
 
-    private func completeMotionIfNeeded(_ motion: Double) {
-        guard motion >= 1, motionStart != nil else { return }
+    private func elapsedTime(at date: Date) -> Double {
+        guard let motionStart else { return 0 }
+        return date.timeIntervalSince(motionStart)
+    }
+
+    /// The ink still takes as long as the finger did. On A and a it waits out the burnout first.
+    private func inkMotion(elapsed: Double) -> Double {
+        let drawn = max(model.playbackDuration, 0.05)
+        if usesRacingDrive {
+            return min(1, max(0, elapsed - CarSimulation.burnout) / drawn)
+        }
+        return min(1, elapsed / drawn)
+    }
+
+    private func completeMotionIfNeeded(_ elapsed: Double) {
+        guard motionStart != nil else { return }
+        let drawn = max(model.playbackDuration, 0.05)
+        let total = usesRacingDrive ? CarSimulation.driveDuration(drawn: drawn) : drawn
+        guard elapsed >= total - 0.02 else { return }
         motionStart = nil
         model.motionFinished()
+    }
+
+    private func rebuildRide() {
+        guard usesRacingDrive, model.phase == .driving || model.phase == .replaying else {
+            ride = nil
+            return
+        }
+        let index = model.phase == .replaying ? model.replayIndex : model.activeStrokeIndex
+        guard model.recordedPaths.indices.contains(index) else {
+            ride = nil
+            return
+        }
+        ride = CarSimulation.run(path: model.recordedPaths[index], drawn: max(model.playbackDuration, 0.35))
     }
 }
 

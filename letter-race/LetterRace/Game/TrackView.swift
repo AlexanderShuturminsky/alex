@@ -13,12 +13,15 @@ enum TrackPalette {
     static let fail = Color(red: 0.953, green: 0.839, blue: 0.800)
     static let success = Color(red: 0.835, green: 0.910, blue: 0.863)
     static let gold = Color(red: 0.93, green: 0.70, blue: 0.16)
-    static let grass = Color(red: 0.29, green: 0.62, blue: 0.04)
+    static let grass = Color(red: 0.30, green: 0.52, blue: 0.16)
+    static let grassLight = Color(red: 0.43, green: 0.67, blue: 0.24)
     static let racingLine = Color(red: 1.0, green: 0.93, blue: 0.45)
-    static let asphalt = Color(red: 0.30, green: 0.38, blue: 0.46)
-    static let curb = Color(red: 0.86, green: 0.15, blue: 0.16)
-    static let carRed = Color(red: 0.86, green: 0.18, blue: 0.16)
-    static let carGreen = Color(red: 0.12, green: 0.62, blue: 0.30)
+    static let asphalt = Color(red: 0.24, green: 0.26, blue: 0.29)
+    static let asphaltWorn = Color(red: 0.34, green: 0.35, blue: 0.38)
+    static let curb = Color(red: 0.82, green: 0.08, blue: 0.11)
+    static let curbShadow = Color(red: 0.40, green: 0.03, blue: 0.05)
+    static let carRed = Color(red: 0.78, green: 0.07, blue: 0.11)
+    static let carGreen = Color(red: 0.02, green: 0.46, blue: 0.22)
 }
 
 enum CarRole {
@@ -38,6 +41,8 @@ enum CarRole {
 struct TrackView: View {
     var model: RaceModel
     var motion: Double
+    var ride: CarSimulation?
+    var driveTime: TimeInterval
     var onBegin: (LetterPoint, TimeInterval) -> Void
     var onMove: (LetterPoint, TimeInterval) -> Void
     var onEnd: (LetterPoint, TimeInterval) -> Void
@@ -47,8 +52,8 @@ struct TrackView: View {
         GeometryReader { geo in
             let viewport = LetterViewport(width: geo.size.width, height: geo.size.height)
             ZStack {
-                Canvas { context, _ in
-                    drawTrack(context: context, viewport: viewport)
+                Canvas { context, size in
+                    drawTrack(context: context, viewport: viewport, canvas: size)
                 }
                 TrackPalette.fail
                     .opacity(model.phase == .failed ? 0.42 : 0)
@@ -105,10 +110,13 @@ struct TrackView: View {
             let place = badgePosition(index: index, stroke: stroke, viewport: viewport)
             Group {
                 if usesRacingTrack {
-                    PaintedCar(
+                    let pose = movingPose(index)
+                    ToyCar(
                         length: carLength(viewport: viewport),
                         angle: carAngle(index: index, stroke: stroke),
                         paint: stroke.id == 1 ? TrackPalette.carRed : TrackPalette.carGreen,
+                        spin: pose?.spin ?? 0,
+                        braking: pose?.braking ?? false,
                         pulsing: role == .active && model.showsPointer,
                         dimmed: role == .done
                     )
@@ -127,10 +135,18 @@ struct TrackView: View {
     }
 
     private func carLength(viewport: LetterViewport) -> CGFloat {
-        CGFloat(max(56, viewport.scale * 13))
+        CGFloat(max(72, viewport.scale * 15.5))
+    }
+
+    private func movingPose(_ index: Int) -> CarSimulation.Sample? {
+        guard isMoving(index), let ride else { return nil }
+        return ride.sample(at: driveTime)
     }
 
     private func carAngle(index: Int, stroke: LetterStroke) -> Angle {
+        if let pose = movingPose(index) {
+            return Angle(radians: pose.body)
+        }
         let path: [LetterPoint]
         let progress: Double
         if isMoving(index), model.recordedPaths.indices.contains(index) {
@@ -152,10 +168,10 @@ struct TrackView: View {
         return Angle(radians: atan2(heading.y, heading.x))
     }
 
-    private func drawTrack(context: GraphicsContext, viewport: LetterViewport) {
+    private func drawTrack(context: GraphicsContext, viewport: LetterViewport, canvas: CGSize) {
         guard let track = model.track else { return }
         if usesRacingTrack {
-            drawRacingTrack(track, viewport: viewport, context: context)
+            drawRacingTrack(track, viewport: viewport, context: context, canvas: canvas)
             return
         }
         let half = track.roadHalfWidth
@@ -186,15 +202,28 @@ struct TrackView: View {
         drawInk(viewport: viewport, context: context, color: model.phase == .almost ? TrackPalette.active : TrackPalette.ink.opacity(0.9))
     }
 
-    /// Grass circuit for A and a: red-and-white curb, asphalt, then a checkered finish.
-    private func drawRacingTrack(_ track: LetterTrack, viewport: LetterViewport, context: GraphicsContext) {
+    /// Mowed grass, a raised road, and a car that can leave rubber and smoke.
+    private func drawRacingTrack(_ track: LetterTrack, viewport: LetterViewport, context: GraphicsContext, canvas: CGSize) {
+        drawLawn(context: context, canvas: canvas)
         let half = track.roadHalfWidth
         let roadWidth = half * 2 * viewport.scale
-        let curbExtra = max(7, viewport.scale * 2.2)
+        let curbExtra = max(8, viewport.scale * 2.5)
         let curbWidth = roadWidth + curbExtra * 2
-        let dash = CGFloat(max(9, viewport.scale * 3.0))
-        for stroke in track.strokes {
-            let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
+        let dash = CGFloat(max(11, viewport.scale * 3.4))
+        let pavedStrokes = track.strokes.map {
+            FinishZone.extended($0.centerline, on: $0, through: FinishZone.endOffset)
+        }
+        let shadow = CGSize(width: viewport.scale * 0.35, height: max(4, viewport.scale * 1.05))
+        for paved in pavedStrokes {
+            strokeRoad(
+                paved,
+                width: curbWidth + 6,
+                color: .black.opacity(0.22),
+                viewport: viewport,
+                context: context,
+                viewShift: shadow
+            )
+            strokeRoad(paved, width: curbWidth + curbExtra * 0.55, color: TrackPalette.curbShadow, viewport: viewport, context: context)
             strokeRoad(paved, width: curbWidth, color: TrackPalette.curb, viewport: viewport, context: context)
             strokeRoad(
                 paved,
@@ -206,28 +235,103 @@ struct TrackView: View {
                 cap: .butt
             )
         }
-        for stroke in track.strokes {
-            let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
+        for paved in pavedStrokes {
+            strokeRoad(paved, width: roadWidth + max(2.5, viewport.scale * 0.45), color: Color.white.opacity(0.92), viewport: viewport, context: context)
             strokeRoad(paved, width: roadWidth, color: TrackPalette.asphalt, viewport: viewport, context: context)
+            strokeRoad(paved, width: roadWidth * 0.46, color: TrackPalette.asphaltWorn, viewport: viewport, context: context)
         }
         for (index, stroke) in track.strokes.enumerated() {
             let alpha = hintAlpha(index)
             if alpha <= 0.01 { continue }
-            let strength = index == highlightedIndex ? 0.7 : 0.4
+            let strength = index == highlightedIndex ? 0.92 : 0.45
             let guide = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.middleOffset)
+            let mark = CGFloat(max(7, viewport.scale * 2.1))
             strokeRoad(
                 guide,
-                width: max(2.5, half * 0.22 * viewport.scale),
+                width: max(2.2, half * 0.16 * viewport.scale),
                 color: .white.opacity(strength * alpha),
                 viewport: viewport,
-                context: context
+                context: context,
+                dash: [mark, mark * 0.85],
+                cap: .butt
             )
         }
         for stroke in track.strokes {
             drawCheckeredGate(stroke, viewport: viewport, context: context)
         }
+        if let ride {
+            drawSkids(ride, until: driveTime, viewport: viewport, context: context)
+            drawSmoke(ride, at: driveTime, viewport: viewport, context: context)
+        }
         let ink = model.phase == .almost ? TrackPalette.active : TrackPalette.racingLine
         drawInk(viewport: viewport, context: context, color: ink)
+    }
+
+    private func drawLawn(context: GraphicsContext, canvas: CGSize) {
+        let band: CGFloat = 26
+        var y: CGFloat = 0
+        var index = 0
+        while y < canvas.height {
+            let rect = CGRect(x: 0, y: y, width: canvas.width, height: band + 0.5)
+            let color = index.isMultiple(of: 2) ? TrackPalette.grassLight : TrackPalette.grass
+            context.fill(Path(rect), with: .color(color))
+            y += band
+            index += 1
+        }
+    }
+
+    private func drawSkids(_ ride: CarSimulation, until time: Double, viewport: LetterViewport, context: GraphicsContext) {
+        let visible = ride.skids.filter { $0.time <= time + 0.0001 }
+        guard visible.count >= 2 else { return }
+        let halfTrack = Double(carLength(viewport: viewport)) / viewport.scale * 0.155
+        let width = max(2.4, viewport.scale * 0.62)
+        for side in [-1.0, 1.0] {
+            var run: [LetterPoint] = []
+            var lastTime = -1.0
+            func flush() {
+                if run.count >= 2 {
+                    strokeRoad(
+                        run,
+                        width: width,
+                        color: Color.black.opacity(0.48),
+                        viewport: viewport,
+                        context: context
+                    )
+                }
+                run = []
+            }
+            for skid in visible {
+                if lastTime >= 0, skid.time - lastTime > 0.08 {
+                    flush()
+                }
+                let sideX = -sin(skid.body) * halfTrack * side
+                let sideY = cos(skid.body) * halfTrack * side
+                run.append(LetterPoint(x: skid.position.x + sideX, y: skid.position.y + sideY))
+                lastTime = skid.time
+            }
+            flush()
+        }
+    }
+
+    private func drawSmoke(_ ride: CarSimulation, at time: Double, viewport: LetterViewport, context: GraphicsContext) {
+        for puff in ride.puffs where puff.time <= time {
+            let age = time - puff.time
+            guard age < 0.9 else { continue }
+            let fade = 1 - age / 0.9
+            let center = cg(
+                LetterPoint(
+                    x: puff.position.x + puff.blowX * age,
+                    y: puff.position.y + puff.blowY * age
+                ),
+                viewport
+            )
+            let radius = viewport.scale * (1.15 + age * 5.2)
+            let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(0.42 * fade)))
+            let core = radius * 0.55
+            let inner = CGRect(x: center.x - core, y: center.y - core, width: core * 2, height: core * 2)
+            context.fill(Path(ellipseIn: inner), with: .color(Color(red: 0.85, green: 0.87, blue: 0.9).opacity(0.35 * fade)))
+        }
     }
 
     private func drawInk(viewport: LetterViewport, context: GraphicsContext, color: Color) {
@@ -250,13 +354,18 @@ struct TrackView: View {
         viewport: LetterViewport,
         context: GraphicsContext,
         dash: [CGFloat]? = nil,
-        cap: CGLineCap = .round
+        cap: CGLineCap = .round,
+        viewShift: CGSize = .zero
     ) {
         guard let first = points.first else { return }
+        func shifted(_ point: LetterPoint) -> CGPoint {
+            let view = cg(point, viewport)
+            return CGPoint(x: view.x + viewShift.width, y: view.y + viewShift.height)
+        }
         var path = Path()
-        path.move(to: cg(first, viewport))
+        path.move(to: shifted(first))
         for point in points.dropFirst() {
-            path.addLine(to: cg(point, viewport))
+            path.addLine(to: shifted(point))
         }
         var style = StrokeStyle(lineWidth: CGFloat(width), lineCap: cap, lineJoin: cap == .butt ? .bevel : .round)
         if let dash {
@@ -278,7 +387,7 @@ struct TrackView: View {
         let half = model.track?.roadHalfWidth ?? 10
         let bandStart = FinishZone.offsets.first ?? 0
         let bandEnd = FinishZone.endOffset
-        let rows = 4
+        let rows = 6
         let cellAcross = (half * 2) / Double(rows)
         let columns = max(2, Int(((bandEnd - bandStart) / cellAcross).rounded()))
         let cellAlong = (bandEnd - bandStart) / Double(columns)
@@ -308,6 +417,13 @@ struct TrackView: View {
                 context.fill(path, with: .color(black ? Color.black : Color.white))
             }
         }
+        var border = Path()
+        border.move(to: corner(along: bandStart, across: -half))
+        border.addLine(to: corner(along: bandEnd, across: -half))
+        border.addLine(to: corner(along: bandEnd, across: half))
+        border.addLine(to: corner(along: bandStart, across: half))
+        border.closeSubpath()
+        context.stroke(border, with: .color(.black.opacity(0.85)), lineWidth: max(1.5, viewport.scale * 0.28))
     }
 
     private func drawGate(_ stroke: LetterStroke, active: Bool, viewport: LetterViewport, context: GraphicsContext) {
@@ -421,7 +537,12 @@ struct TrackView: View {
             return 0
         case .driving:
             if index < model.activeStrokeIndex { return 0 }
-            if index == model.activeStrokeIndex { return max(0, 1 - motion) }
+            if index == model.activeStrokeIndex {
+                if usesRacingTrack, let ride {
+                    return max(0, 1 - ride.sample(at: driveTime).progress)
+                }
+                return max(0, 1 - motion)
+            }
             return 1
         default:
             return index >= model.activeStrokeIndex ? 1 : 0
@@ -498,6 +619,9 @@ struct TrackView: View {
     }
 
     private func carPoint(index: Int, stroke: LetterStroke) -> LetterPoint {
+        if let pose = movingPose(index) {
+            return pose.position
+        }
         if isMoving(index), model.recordedPaths.indices.contains(index) {
             return RoadGeometry.point(at: motion, along: model.recordedPaths[index])
         }
@@ -524,62 +648,183 @@ struct TrackView: View {
     }
 }
 
-/// Top-down car drawn in the app. It points right, then rotates onto the road heading.
-private struct PaintedCar: View {
+/// Top-down toy sports car. It points right, then the view turns it onto its heading.
+/// Wheels sit in arches, and the rims spin with `spin`.
+private struct ToyCar: View {
     var length: CGFloat
     var angle: Angle
     var paint: Color
+    var spin: Double
+    var braking: Bool
     var pulsing: Bool
     var dimmed: Bool
     @State private var pulse = false
 
     var body: some View {
         let height = length * 0.46
-        ZStack {
-            wheelPair(length: length, height: height, x: -length * 0.20)
-            wheelPair(length: length, height: height, x: length * 0.18)
-            RoundedRectangle(cornerRadius: height * 0.32, style: .continuous)
-                .fill(paint)
-                .overlay(
-                    RoundedRectangle(cornerRadius: height * 0.32, style: .continuous)
-                        .stroke(.white.opacity(0.9), lineWidth: max(1.5, length * 0.028))
-                )
-                .frame(width: length * 0.80, height: height * 0.56)
-            RoundedRectangle(cornerRadius: height * 0.14, style: .continuous)
-                .fill(Color.black.opacity(0.30))
-                .frame(width: length * 0.34, height: height * 0.38)
-                .offset(x: length * 0.05)
-            RoundedRectangle(cornerRadius: height * 0.08, style: .continuous)
-                .fill(Color(red: 0.62, green: 0.82, blue: 0.94))
-                .frame(width: length * 0.15, height: height * 0.24)
-                .offset(x: length * 0.13)
-            headlight(length: length, height: height, y: -height * 0.11)
-            headlight(length: length, height: height, y: height * 0.11)
+        Canvas { context, size in
+            var context = context
+            draw(in: &context, size: size)
         }
         .frame(width: length, height: height)
         .rotationEffect(angle)
-        .opacity(dimmed ? 0.72 : 1)
-        .shadow(color: .black.opacity(0.35), radius: 2.5, y: 1.5)
-        .scaleEffect(pulsing && pulse ? 1.06 : 1)
+        .opacity(dimmed ? 0.78 : 1)
+        .scaleEffect(pulsing && pulse ? 1.045 : 1)
         .onAppear { pulse = true }
         .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: pulse)
     }
 
-    private func wheelPair(length: CGFloat, height: CGFloat, x: CGFloat) -> some View {
-        let wheel = RoundedRectangle(cornerRadius: length * 0.04, style: .continuous)
-            .fill(Color(red: 0.10, green: 0.10, blue: 0.12))
-            .frame(width: length * 0.17, height: height * 0.24)
-        return ZStack {
-            wheel.offset(x: x, y: -height * 0.37)
-            wheel.offset(x: x, y: height * 0.37)
+    private func draw(in context: inout GraphicsContext, size: CGSize) {
+        let width = size.width
+        let height = size.height
+        func at(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: width * x, y: height * y)
+        }
+
+        let shadow = CGRect(x: width * 0.1, y: height * 0.18, width: width * 0.8, height: height * 0.68)
+        context.fill(
+            Path(ellipseIn: shadow.offsetBy(dx: 0, dy: height * 0.05)),
+            with: .color(.black.opacity(0.28))
+        )
+
+        let along = width * 0.16
+        let across = height * 0.18
+        wheel(in: &context, center: at(0.28, 0.1), along: along, across: across)
+        wheel(in: &context, center: at(0.28, 0.9), along: along, across: across)
+        wheel(in: &context, center: at(0.73, 0.1), along: along, across: across)
+        wheel(in: &context, center: at(0.73, 0.9), along: along, across: across)
+
+        let body = bodyPath(width: width, height: height)
+        context.fill(body, with: .color(paint))
+        context.fill(
+            body,
+            with: .linearGradient(
+                Gradient(colors: [
+                    Color.white.opacity(0.5),
+                    Color.white.opacity(0.08),
+                    Color.black.opacity(0.28),
+                ]),
+                startPoint: at(0.5, 0.12),
+                endPoint: at(0.5, 0.9)
+            )
+        )
+        context.stroke(body, with: .color(.white.opacity(0.72)), lineWidth: max(1.3, width * 0.016))
+
+        context.fill(
+            Path(ellipseIn: CGRect(x: width * 0.7, y: height * 0.4, width: width * 0.18, height: height * 0.2)),
+            with: .color(.white.opacity(0.16))
+        )
+
+        let cabin = Path(
+            roundedRect: CGRect(x: width * 0.34, y: height * 0.28, width: width * 0.28, height: height * 0.44),
+            cornerRadius: height * 0.12
+        )
+        context.fill(cabin, with: .color(.black.opacity(0.42)))
+
+        var glass = Path()
+        glass.move(to: at(0.52, 0.32))
+        glass.addLine(to: at(0.64, 0.27))
+        glass.addLine(to: at(0.64, 0.73))
+        glass.addLine(to: at(0.52, 0.68))
+        glass.closeSubpath()
+        context.fill(glass, with: .color(Color(red: 0.62, green: 0.84, blue: 0.94).opacity(0.95)))
+        var streak = Path()
+        streak.move(to: at(0.55, 0.34))
+        streak.addLine(to: at(0.61, 0.31))
+        streak.addLine(to: at(0.59, 0.46))
+        streak.closeSubpath()
+        context.fill(streak, with: .color(.white.opacity(0.6)))
+
+        let rearGlass = Path(
+            roundedRect: CGRect(x: width * 0.34, y: height * 0.34, width: width * 0.09, height: height * 0.32),
+            cornerRadius: height * 0.05
+        )
+        context.fill(rearGlass, with: .color(Color(red: 0.45, green: 0.68, blue: 0.8).opacity(0.9)))
+
+        mirror(in: &context, center: at(0.60, 0.2), width: width, height: height)
+        mirror(in: &context, center: at(0.60, 0.8), width: width, height: height)
+
+        let spoiler = Path(
+            roundedRect: CGRect(x: width * 0.07, y: height * 0.24, width: width * 0.045, height: height * 0.52),
+            cornerRadius: width * 0.015
+        )
+        context.fill(spoiler, with: .color(.black.opacity(0.62)))
+
+        lamp(in: &context, rect: CGRect(x: width * 0.9, y: height * 0.32, width: width * 0.05, height: height * 0.1), color: Color(red: 1, green: 0.96, blue: 0.75))
+        lamp(in: &context, rect: CGRect(x: width * 0.9, y: height * 0.58, width: width * 0.05, height: height * 0.1), color: Color(red: 1, green: 0.96, blue: 0.75))
+        let tail = braking ? Color(red: 1, green: 0.25, blue: 0.2) : Color(red: 0.72, green: 0.08, blue: 0.1)
+        lamp(in: &context, rect: CGRect(x: width * 0.12, y: height * 0.33, width: width * 0.04, height: height * 0.09), color: tail)
+        lamp(in: &context, rect: CGRect(x: width * 0.12, y: height * 0.58, width: width * 0.04, height: height * 0.09), color: tail)
+        if braking {
+            context.fill(
+                Path(ellipseIn: CGRect(x: width * 0.08, y: height * 0.30, width: width * 0.08, height: height * 0.12)),
+                with: .color(Color.red.opacity(0.35))
+            )
+            context.fill(
+                Path(ellipseIn: CGRect(x: width * 0.08, y: height * 0.58, width: width * 0.08, height: height * 0.12)),
+                with: .color(Color.red.opacity(0.35))
+            )
         }
     }
 
-    private func headlight(length: CGFloat, height: CGFloat, y: CGFloat) -> some View {
-        Capsule()
-            .fill(Color(red: 1, green: 0.96, blue: 0.72))
-            .frame(width: length * 0.045, height: height * 0.09)
-            .offset(x: length * 0.36, y: y)
+    private func bodyPath(width: CGFloat, height: CGFloat) -> Path {
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: width * x, y: height * y)
+        }
+        var path = Path()
+        path.move(to: p(0.14, 0.36))
+        path.addCurve(to: p(0.08, 0.5), control1: p(0.07, 0.38), control2: p(0.05, 0.44))
+        path.addCurve(to: p(0.14, 0.64), control1: p(0.05, 0.56), control2: p(0.07, 0.62))
+        path.addCurve(to: p(0.30, 0.9), control1: p(0.2, 0.78), control2: p(0.24, 0.94))
+        path.addCurve(to: p(0.55, 0.78), control1: p(0.38, 0.84), control2: p(0.46, 0.78))
+        path.addCurve(to: p(0.74, 0.92), control1: p(0.64, 0.8), control2: p(0.68, 0.96))
+        path.addCurve(to: p(0.97, 0.5), control1: p(0.88, 0.84), control2: p(0.99, 0.66))
+        path.addCurve(to: p(0.74, 0.08), control1: p(0.99, 0.34), control2: p(0.88, 0.16))
+        path.addCurve(to: p(0.55, 0.22), control1: p(0.68, 0.04), control2: p(0.64, 0.2))
+        path.addCurve(to: p(0.30, 0.1), control1: p(0.46, 0.22), control2: p(0.38, 0.16))
+        path.addCurve(to: p(0.14, 0.36), control1: p(0.24, 0.06), control2: p(0.2, 0.22))
+        path.closeSubpath()
+        return path
+    }
+
+    private func wheel(in context: inout GraphicsContext, center: CGPoint, along: CGFloat, across: CGFloat) {
+        let tire = Path(
+            roundedRect: CGRect(x: center.x - along / 2, y: center.y - across / 2, width: along, height: across),
+            cornerRadius: across * 0.42
+        )
+        context.fill(tire, with: .color(Color(red: 0.07, green: 0.07, blue: 0.08)))
+        context.stroke(tire, with: .color(.white.opacity(0.18)), lineWidth: 0.8)
+        let rimRadius = across * 0.34
+        let rim = Path(ellipseIn: CGRect(x: center.x - rimRadius, y: center.y - rimRadius, width: rimRadius * 2, height: rimRadius * 2))
+        context.fill(rim, with: .color(Color(red: 0.78, green: 0.81, blue: 0.86)))
+        var spokes = Path()
+        for index in 0..<5 {
+            let angle = spin + Double(index) * Double.pi * 2 / 5
+            spokes.move(to: center)
+            spokes.addLine(to: CGPoint(
+                x: center.x + CGFloat(cos(angle)) * rimRadius * 0.78,
+                y: center.y + CGFloat(sin(angle)) * rimRadius * 0.78
+            ))
+        }
+        context.stroke(spokes, with: .color(Color(red: 0.22, green: 0.24, blue: 0.28)), lineWidth: max(1, along * 0.07))
+        let hub = rimRadius * 0.28
+        context.fill(
+            Path(ellipseIn: CGRect(x: center.x - hub, y: center.y - hub, width: hub * 2, height: hub * 2)),
+            with: .color(.white.opacity(0.95))
+        )
+    }
+
+    private func mirror(in context: inout GraphicsContext, center: CGPoint, width: CGFloat, height: CGFloat) {
+        let rect = CGRect(x: center.x - width * 0.035, y: center.y - height * 0.045, width: width * 0.07, height: height * 0.09)
+        context.fill(Path(roundedRect: rect, cornerRadius: height * 0.03), with: .color(.black.opacity(0.55)))
+        context.fill(
+            Path(ellipseIn: rect.insetBy(dx: width * 0.015, dy: height * 0.02)),
+            with: .color(Color(red: 0.7, green: 0.84, blue: 0.92))
+        )
+    }
+
+    private func lamp(in context: inout GraphicsContext, rect: CGRect, color: Color) {
+        context.fill(Path(roundedRect: rect, cornerRadius: rect.height * 0.4), with: .color(color))
     }
 }
 

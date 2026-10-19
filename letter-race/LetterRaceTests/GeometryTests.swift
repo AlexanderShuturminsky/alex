@@ -565,6 +565,57 @@ final class GeometryTests: XCTestCase {
         XCTAssertFalse(GlyphCatalog.numbers[4].isPlayable)
     }
 
+    func testCarBurnsOutBeforeItRollsAndDriftsATightCorner() {
+        let straight = [
+            LetterPoint(x: 0, y: 40),
+            LetterPoint(x: 140, y: 40),
+        ]
+        let launch = CarSimulation.run(path: straight, drawn: 1.6)
+        let early = launch.sample(at: 0.28)
+        XCTAssertTrue(early.burning)
+        XCTAssertLessThan(early.speed, launch.cruise * 0.45)
+        XCTAssertGreaterThan(early.spinRate, early.speed * 2)
+        XCTAssertLessThan(early.position.distance(to: straight[0]), 8)
+        XCTAssertGreaterThan(launch.skids.filter { $0.time < CarSimulation.burnout }.count, 8)
+        XCTAssertFalse(launch.puffs.isEmpty)
+        let cruising = launch.sample(at: CarSimulation.burnout + 0.45)
+        XCTAssertFalse(cruising.burning)
+        XCTAssertGreaterThan(cruising.speed, launch.cruise * 0.55)
+        let straightOff = launch.samples
+            .filter { $0.time > CarSimulation.burnout + 0.2 && $0.progress < 0.9 }
+            .map { abs($0.position.y - 40) }
+            .max() ?? 0
+        XCTAssertLessThan(straightOff, 2.2, "straight offset \(straightOff)")
+        let parked = launch.sample(at: launch.duration)
+        XCTAssertLessThan(parked.position.distance(to: straight[1]), 8)
+
+        let hairpin = [
+            LetterPoint(x: 0, y: 70),
+            LetterPoint(x: 46, y: 70),
+            LetterPoint(x: 46, y: 8),
+        ]
+        let slide = CarSimulation.run(path: hairpin, drawn: 1.5)
+        let corner = slide.samples.filter { $0.time > CarSimulation.burnout && $0.progress > 0.25 && $0.progress < 0.85 }
+        let maxSlip = corner.map(\.slip).max() ?? 0
+        let maxOff = corner
+            .map { RoadGeometry.project($0.position, onto: hairpin).distance }
+            .max() ?? 0
+        XCTAssertGreaterThan(maxSlip, 0.45, "slip \(maxSlip)")
+        XCTAssertGreaterThan(maxOff, 3.5, "offset \(maxOff)")
+        XCTAssertGreaterThan(slide.puffs.filter { $0.time > CarSimulation.burnout }.count, 2)
+        XCTAssertLessThan(slide.sample(at: slide.duration).position.distance(to: hairpin[2]), 10)
+
+        let peak = LetterA.track.strokes[0].centerline
+        let apex = CarSimulation.run(path: peak, drawn: 2.0)
+        let crown = apex.samples.filter { $0.progress > 0.35 && $0.progress < 0.7 }
+        let crownOff = crown
+            .map { RoadGeometry.project($0.position, onto: peak, near: $0.progress).distance }
+            .max() ?? 0
+        XCTAssertGreaterThan(crownOff, 2.5, "apex offset \(crownOff)")
+        XCTAssertLessThan(crownOff, 9.5, "apex offset \(crownOff)")
+        XCTAssertLessThan(apex.sample(at: apex.duration).position.distance(to: peak.last ?? LetterA.rightFoot), 10)
+    }
+
     private var playableA: Glyph {
         GlyphCatalog.glyph(id: "A")!
     }
