@@ -4,11 +4,11 @@ import Foundation
 /// the car cruises, brakes before a bend, and steps the rear out on a sharp one.
 struct CarSimulation: Equatable {
     /// Time the rear tires smoke before the car takes off.
-    static let burnout = 0.46
+    static let burnout = 0.34
     /// How long the car must sit on the finish before the ride is over.
-    static let settle = 0.28
-    /// Letter units per second on a straight, whatever the drawing took.
-    static let cruiseSpeed = 42.0
+    static let settle = 0.22
+    /// Letter units per second on a straight. Corners still force a slower speed.
+    static let cruiseSpeed = 120.0
 
     var duration: Double
     var cruise: Double
@@ -115,17 +115,19 @@ struct CarSimulation: Equatable {
         while time <= maxTime + 0.0001 {
             let burning = time < burnout
             let here = RoadGeometry.heading(of: path, at: anchor) ?? initial
-            let soon = RoadGeometry.heading(of: path, at: min(1, anchor + 12 / total)) ?? here
-            let later = RoadGeometry.heading(of: path, at: min(1, anchor + 30 / total)) ?? here
+            let soon = RoadGeometry.heading(of: path, at: min(1, anchor + 14 / total)) ?? here
+            let later = RoadGeometry.heading(of: path, at: min(1, anchor + 28 / total)) ?? here
             let roadTurn = wrap(angle(soon) - angle(here))
             let earlyTurn = wrap(angle(later) - angle(here))
             let severity = max(abs(roadTurn), abs(earlyTurn))
 
             let cornerLimit = cruise / (1 + severity * 2.1)
-            let easing = anchor > 0.9 ? max(0, (1 - anchor) / 0.1) : 1.0
-            let wantedSpeed = burning ? 6.0 : cornerLimit * easing
+            let remaining = max(0, (1 - anchor) * total)
+            let stopping = speed * speed / (2 * 240) + 5
+            let endScale = remaining < stopping ? max(0, remaining / max(stopping, 0.001)) : 1.0
+            let wantedSpeed = burning ? 6.0 : cornerLimit * endScale
             let braking = !burning && wantedSpeed + 2 < speed
-            let accel = burning ? 20.0 : (braking ? 78.0 : 52.0)
+            let accel = burning ? 24.0 : (braking ? 280.0 : 180.0)
             speed += clamp(wantedSpeed - speed, -accel * dt, accel * dt)
             if speed < 0 { speed = 0 }
 

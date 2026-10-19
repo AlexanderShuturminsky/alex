@@ -38,6 +38,8 @@ struct TrackView: View {
     var motion: Double
     var ride: CarSimulation?
     var driveTime: TimeInterval
+    /// 0 is off the start, 1 is parked on it. The next car rolls in after the previous one finishes.
+    var arrival: Double = 1
     var onBegin: (LetterPoint, TimeInterval) -> Void
     var onMove: (LetterPoint, TimeInterval) -> Void
     var onEnd: (LetterPoint, TimeInterval) -> Void
@@ -58,7 +60,7 @@ struct TrackView: View {
                 badges(viewport: viewport)
                 pointer(viewport: viewport)
                 TouchCapture(
-                    enabled: model.isAcceptingTouch,
+                    enabled: model.isAcceptingTouch && arrival >= 0.98,
                     onBegin: { onBegin(viewport.letter(x: $0.x, y: $0.y), $1) },
                     onMove: { onMove(viewport.letter(x: $0.x, y: $0.y), $1) },
                     onEnd: { onEnd(viewport.letter(x: $0.x, y: $0.y), $1) },
@@ -73,6 +75,7 @@ struct TrackView: View {
     private func pointer(viewport: LetterViewport) -> some View {
         Group {
             if model.showsPointer,
+               arrival >= 0.98,
                viewport.scale > 0,
                let stroke = highlightedStroke,
                let heading = RoadGeometry.heading(of: stroke.centerline) {
@@ -104,6 +107,7 @@ struct TrackView: View {
             let role = role(for: index)
             let place = badgePosition(index: index, stroke: stroke, viewport: viewport)
             Group {
+                if showsThisCar(index) {
                 if usesRacingTrack {
                     let pose = movingPose(index)
                     PhotoCar(
@@ -122,10 +126,17 @@ struct TrackView: View {
                         pulsing: role == .active && model.showsPointer
                     )
                 }
+                }
             }
             .position(place)
             .allowsHitTesting(false)
         }
+    }
+
+    /// On A and a, the other cars stay off the road so two of them never cross.
+    private func showsThisCar(_ index: Int) -> Bool {
+        guard usesRacingTrack else { return true }
+        return index == highlightedIndex && model.phase != .success
     }
 
     private func carLength(viewport: LetterViewport) -> CGFloat {
@@ -205,22 +216,22 @@ struct TrackView: View {
         let curbExtra = max(8, viewport.scale * 2.5)
         let curbWidth = roadWidth + curbExtra * 2
         let dash = CGFloat(max(11, viewport.scale * 3.4))
-        let pavedStrokes = track.strokes.map {
-            FinishZone.extended($0.centerline, on: $0, through: FinishZone.endOffset)
-        }
+        let pieces = roadPieces(of: track)
         let shadow = CGSize(width: viewport.scale * 0.35, height: max(4, viewport.scale * 1.05))
-        for paved in pavedStrokes {
+        for piece in pieces {
             strokeRoad(
-                paved,
+                piece.asphalt,
                 width: curbWidth + 6,
                 color: .black.opacity(0.18),
                 viewport: viewport,
                 context: context,
                 viewShift: shadow
             )
-            strokeRoad(paved, width: curbWidth, color: TrackPalette.curb, viewport: viewport, context: context)
+        }
+        for piece in pieces {
+            strokeRoad(piece.curb, width: curbWidth, color: TrackPalette.curb, viewport: viewport, context: context)
             strokeRoad(
-                paved,
+                piece.curb,
                 width: curbWidth,
                 color: .white,
                 viewport: viewport,
@@ -228,7 +239,9 @@ struct TrackView: View {
                 dash: [dash, dash],
                 cap: .butt
             )
-            strokeRoad(paved, width: roadWidth, color: TrackPalette.asphalt, viewport: viewport, context: context)
+        }
+        for piece in pieces {
+            strokeRoad(piece.asphalt, width: roadWidth, color: TrackPalette.asphalt, viewport: viewport, context: context)
         }
         if let stroke = highlightedStroke, hintAlpha(highlightedIndex) > 0.01 {
             let guide = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.middleOffset)
@@ -244,7 +257,7 @@ struct TrackView: View {
             )
         }
         if model.phase != .success, let stroke = highlightedStroke {
-            drawCheckeredGate(stroke, viewport: viewport, context: context)
+            drawCheckeredGate(stroke, roads: pieces.map(\.asphalt), viewport: viewport, context: context)
         }
         if let ride {
             drawSkids(ride, until: driveTime, viewport: viewport, context: context)
@@ -362,8 +375,108 @@ struct TrackView: View {
         context.stroke(path, with: .color(color), style: style)
     }
 
+    /// One outline for the whole letter. A stroke that ends inside another stroke
+    /// stops its curb at that edge, so the join is a single road instead of two caps.
+    private func roadPieces(of track: LetterTrack) -> [(asphalt: [LetterPoint], curb: [LetterPoint])] {
+        let half = track.roadHalfWidth
+        let strokes = track.strokes
+        return strokes.enumerated().map { index, stroke in
+            let line = stroke.centerline
+            guard line.count >= 2 else { return (line, line) }
+            let startJoined = joins(line[0], besides: index, strokes: strokes, half: half)
+            let endJoined = joins(line[line.count - 1], besides: index, strokes: strokes, half: half)
+            var asphalt = line
+            if !endJoined {
+                asphalt = FinishZone.extended(line, on: stroke, through: FinishZone.endOffset)
+            }
+            var curb = asphalt
+            if startJoined {
+                curb = trim(curb, fromEnd: false, besides: index, strokes: strokes, half: half)
+            }
+            if endJoined {
+                curb = trim(curb, fromEnd: true, besides: index, strokes: strokes, half: half)
+            }
+            if curb.count < 2 { curb = asphalt }
+            return (asphalt, curb)
+        }
+    }
+
+    private func joins(_ point: LetterPoint, besides index: Int, strokes: [LetterStroke], half: Double) -> Bool {
+        for (other, stroke) in strokes.enumerated() where other != index {
+            if RoadGeometry.project(point, onto: stroke.centerline).distance <= half * 1.25 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func covered(_ point: LetterPoint, besides index: Int, strokes: [LetterStroke], half: Double) -> Bool {
+        for (other, stroke) in strokes.enumerated() where other != index {
+            if RoadGeometry.project(point, onto: stroke.centerline).distance <= half * 0.94 {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Drops the end that sits inside another stroke, stopping where that road's edge is.
+    private func trim(
+        _ line: [LetterPoint],
+        fromEnd: Bool,
+        besides index: Int,
+        strokes: [LetterStroke],
+        half: Double
+    ) -> [LetterPoint] {
+        guard line.count >= 2 else { return line }
+        let sequence = fromEnd ? Array(line.reversed()) : line
+        if !covered(sequence[0], besides: index, strokes: strokes, half: half) { return line }
+        var traveled = 0.0
+        var previous = sequence[0]
+        for point in sequence.dropFirst() {
+            let step = previous.distance(to: point)
+            if !covered(point, besides: index, strokes: strokes, half: half) {
+                let cut = traveled + step * 0.55
+                let trimmed = fromEnd ? drop(cut, fromEndOf: line) : drop(cut, fromStartOf: line)
+                return trimmed.count >= 2 ? trimmed : line
+            }
+            traveled += step
+            previous = point
+        }
+        return line
+    }
+
+    private func drop(_ distance: Double, fromStartOf line: [LetterPoint]) -> [LetterPoint] {
+        guard line.count >= 2, distance > 0 else { return line }
+        var left = distance
+        var index = 0
+        while index < line.count - 1 {
+            let step = line[index].distance(to: line[index + 1])
+            if left <= step {
+                let t = step > 0 ? left / step : 0
+                let mid = LetterPoint(
+                    x: line[index].x + (line[index + 1].x - line[index].x) * t,
+                    y: line[index].y + (line[index + 1].y - line[index].y) * t
+                )
+                return [mid] + Array(line[(index + 1)...])
+            }
+            left -= step
+            index += 1
+        }
+        return [line[line.count - 1]]
+    }
+
+    private func drop(_ distance: Double, fromEndOf line: [LetterPoint]) -> [LetterPoint] {
+        let trimmed = drop(distance, fromStartOf: Array(line.reversed()))
+        return Array(trimmed.reversed())
+    }
+
     /// Black and white squares across the road, from the first hatch through the end of the pavement.
-    private func drawCheckeredGate(_ stroke: LetterStroke, viewport: LetterViewport, context: GraphicsContext) {
+    private func drawCheckeredGate(
+        _ stroke: LetterStroke,
+        roads: [[LetterPoint]],
+        viewport: LetterViewport,
+        context: GraphicsContext
+    ) {
         guard stroke.centerline.count >= 2,
               let heading = RoadGeometry.heading(of: stroke.centerline, at: 1) else { return }
         let end = stroke.centerline[stroke.centerline.count - 1]
@@ -395,6 +508,14 @@ struct TrackView: View {
             for column in 0..<columns {
                 let along0 = bandStart + Double(column) * cellAlong
                 let across0 = -half + Double(row) * cellAcross
+                let center = LetterPoint(
+                    x: end.x + heading.x * (along0 + cellAlong / 2) - heading.y * (across0 + cellAcross / 2),
+                    y: end.y + heading.y * (along0 + cellAlong / 2) + heading.x * (across0 + cellAcross / 2)
+                )
+                let onRoad = roads.contains { road in
+                    RoadGeometry.project(center, onto: road).distance <= half * 0.98
+                }
+                if !onRoad { continue }
                 var path = Path()
                 path.move(to: corner(along: along0, across: across0))
                 path.addLine(to: corner(along: along0 + cellAlong, across: across0))
@@ -405,13 +526,16 @@ struct TrackView: View {
                 context.fill(path, with: .color(black ? Color.black : Color.white))
             }
         }
-        var border = Path()
-        border.move(to: corner(along: bandStart, across: -half))
-        border.addLine(to: corner(along: bandEnd, across: -half))
-        border.addLine(to: corner(along: bandEnd, across: half))
-        border.addLine(to: corner(along: bandStart, across: half))
-        border.closeSubpath()
-        context.stroke(border, with: .color(.black.opacity(0.85)), lineWidth: max(1.5, viewport.scale * 0.28))
+        let shared = roads.filter { RoadGeometry.project(end, onto: $0).distance <= half * 0.5 }.count
+        if shared < 2 {
+            var border = Path()
+            border.move(to: corner(along: bandStart, across: -half))
+            border.addLine(to: corner(along: bandEnd, across: -half))
+            border.addLine(to: corner(along: bandEnd, across: half))
+            border.addLine(to: corner(along: bandStart, across: half))
+            border.closeSubpath()
+            context.stroke(border, with: .color(.black.opacity(0.85)), lineWidth: max(1.5, viewport.scale * 0.28))
+        }
     }
 
     private func drawGate(_ stroke: LetterStroke, active: Bool, viewport: LetterViewport, context: GraphicsContext) {
@@ -609,6 +733,15 @@ struct TrackView: View {
             return RoadGeometry.point(at: motion, along: model.recordedPaths[index])
         }
         if isParkedAtStart(index) {
+            if usesRacingTrack, arrival < 0.999, index == highlightedIndex,
+               let heading = RoadGeometry.heading(of: stroke.centerline) {
+                let eased = 1 - (1 - arrival) * (1 - arrival)
+                let distance = 34 * (1 - eased)
+                return LetterPoint(
+                    x: stroke.start.x - heading.x * distance,
+                    y: stroke.start.y - heading.y * distance
+                )
+            }
             if shouldNudge(index, stroke: stroke) {
                 return LetterPoint(x: stroke.start.x + 22, y: stroke.start.y - 20)
             }

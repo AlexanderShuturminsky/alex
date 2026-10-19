@@ -5,6 +5,7 @@ struct RaceView: View {
     @State private var model: RaceModel
     @State private var motionStart: Date?
     @State private var ride: CarSimulation?
+    @State private var arrivalBegan: Date?
     @State private var almostToken = 0
 
     init(glyph: Glyph) {
@@ -12,15 +13,17 @@ struct RaceView: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionStart == nil)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionStart == nil && arrivalBegan == nil)) { timeline in
             let elapsed = elapsedTime(at: timeline.date)
             let motion = inkMotion(elapsed: elapsed)
+            let arrival = arrivalProgress(at: timeline.date)
             ZStack {
                 TrackView(
                     model: model,
                     motion: motion,
                     ride: ride,
                     driveTime: elapsed,
+                    arrival: arrival,
                     onBegin: { model.press(at: $0, time: $1) },
                     onMove: { model.move(to: $0, time: $1) },
                     onEnd: { model.release(at: $0, time: $1) },
@@ -57,15 +60,22 @@ struct RaceView: View {
                 .padding(.top, 4)
                 .allowsHitTesting(model.phase == .success)
             }
-            .onChange(of: elapsed) { _, newValue in
-                completeMotionIfNeeded(newValue)
+            .onChange(of: timeline.date) { _, date in
+                completeArrivalIfNeeded(date)
+                completeMotionIfNeeded(elapsedTime(at: date))
             }
         }
         .background((model.glyph.id == "A" || model.glyph.id == "a" ? TrackPalette.grass : TrackPalette.paper).ignoresSafeArea())
         .navigationTitle(model.glyph.symbol)
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: model.activeStrokeIndex) { _, index in
+            beginArrival(for: index)
+        }
         .onChange(of: model.phase) { _, phase in
             rebuildRide()
+            if phase != .awaiting {
+                arrivalBegan = nil
+            }
             if phase == .driving || phase == .replaying {
                 motionStart = .now
             }
@@ -101,6 +111,25 @@ struct RaceView: View {
 
     private var usesRacingDrive: Bool {
         model.glyph.id == "A" || model.glyph.id == "a"
+    }
+
+    /// The next car rolls onto its start. The first car is already waiting.
+    private func beginArrival(for index: Int) {
+        guard usesRacingDrive, model.phase == .awaiting, index > 0 else {
+            arrivalBegan = nil
+            return
+        }
+        arrivalBegan = .now
+    }
+
+    private func arrivalProgress(at date: Date) -> Double {
+        guard usesRacingDrive, model.phase == .awaiting, model.activeStrokeIndex > 0, let arrivalBegan else { return 1 }
+        return min(1, max(0, date.timeIntervalSince(arrivalBegan) / 0.42))
+    }
+
+    private func completeArrivalIfNeeded(_ date: Date) {
+        guard let arrivalBegan, date.timeIntervalSince(arrivalBegan) >= 0.42 else { return }
+        self.arrivalBegan = nil
     }
 
     private func elapsedTime(at date: Date) -> Double {
