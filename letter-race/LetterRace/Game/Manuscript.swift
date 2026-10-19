@@ -1,6 +1,7 @@
 import Foundation
 
 /// Shared curves for the handwriting-chart letters.
+/// Each stroke array is one numbered pen-down on the chart. A bend stays in that stroke.
 enum Manuscript {
     static func arc(
         center: LetterPoint,

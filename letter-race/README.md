@@ -6,7 +6,7 @@ This version is an iPhone app. Open it in Xcode and run it on the simulator or o
 
 ## How A is written
 
-The strokes follow a print handwriting chart. Capital A starts at the bottom-left and climbs to the top, then the crossbar goes left to right, then the right leg comes down. Each level is a capital with its lowercase. A and a are open first. B, Q, and W, each with its small letter, open in that order. A level opens after both letters in the previous one have been raced seven times. Seven long dashes under the letter fill in as those races succeed.
+The strokes follow a print handwriting chart, and only the numbered pen-downs become cars. Capital A is one move from the bottom-left up over the apex and down to the bottom-right, then the crossbar goes left to right. Each level is a capital with its lowercase. A and a are open first. B, Q, and W, each with its small letter, open in that order. A level opens after both letters in the previous one have been raced seven times. Seven long dashes under the letter fill in as those races succeed.
 
 Each stroke is one car. A pulsing arrow sits behind the next car and points along the stroke. There is no instruction text. A sharp corner, or going backward, stops the stroke. The ink ends in the middle of the hatched finish. More than three wall hits ends it as well. The car launches only when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. The replay drives each stroke for as long as the finger took to draw it.
 

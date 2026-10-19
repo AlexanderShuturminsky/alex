@@ -1,9 +1,8 @@
 import Foundation
 
 /// Print capital A from the handwriting chart.
-/// Stroke 1 starts at the bottom-left and climbs to the top.
-/// Stroke 2 is the crossbar, left to right.
-/// Stroke 3 comes down the right leg.
+/// Stroke 1 is one move: bottom-left, up over the apex, down to the bottom-right.
+/// The apex is not a pen lift. Stroke 2 is the crossbar, left to right.
 enum LetterA {
     static let roadHalfWidth = 9.0
 
@@ -20,18 +19,13 @@ enum LetterA {
             strokes: [
                 LetterStroke(
                     id: 1,
-                    centerline: [leftFoot, apex],
-                    gate: FinishGate(center: apex, radius: gateRadius)
+                    centerline: [leftFoot, apex, rightFoot],
+                    gate: FinishGate(center: rightFoot, radius: gateRadius)
                 ),
                 LetterStroke(
                     id: 2,
                     centerline: [leftJoin, rightJoin],
                     gate: FinishGate(center: rightJoin, radius: gateRadius)
-                ),
-                LetterStroke(
-                    id: 3,
-                    centerline: [apex, rightFoot],
-                    gate: FinishGate(center: rightFoot, radius: gateRadius)
                 ),
             ],
             roadHalfWidth: roadHalfWidth
