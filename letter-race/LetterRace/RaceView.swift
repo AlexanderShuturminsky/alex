@@ -15,11 +15,9 @@ struct RaceView: View {
             VStack(spacing: 0) {
                 StarMeter(
                     filled: starCount,
-                    emphasized: model.phase == .almost || model.phase == .success,
                     tint: model.phase == .almost ? TrackPalette.active : TrackPalette.gold
                 )
-                .padding(.top, 10)
-                .padding(.bottom, 4)
+                .frame(height: 64)
 
                 TrackView(
                     model: model,
@@ -30,21 +28,23 @@ struct RaceView: View {
                     onCancel: { model.cancel() }
                 )
 
-                if model.phase == .success {
-                    Button {
-                        model.reset()
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(TrackPalette.ink)
-                            .frame(width: 64, height: 64)
-                            .background(TrackPalette.success, in: Circle())
+                ZStack {
+                    if model.phase == .success {
+                        Button {
+                            model.reset()
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(TrackPalette.ink)
+                                .frame(width: 64, height: 64)
+                                .background(TrackPalette.success, in: Circle())
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.86)))
+                        .accessibilityLabel("Race again")
                     }
-                    .padding(.bottom, 16)
-                    .accessibilityLabel("Race again")
-                } else {
-                    Color.clear.frame(height: 24)
                 }
+                .frame(height: 96)
+                .animation(.easeInOut(duration: 0.35), value: model.phase == .success)
             }
             .onChange(of: motion) { _, newValue in
                 completeMotionIfNeeded(newValue)
@@ -98,22 +98,21 @@ struct RaceView: View {
 
 private struct StarMeter: View {
     var filled: Int
-    var emphasized: Bool
     var tint: Color
-    @State private var pulse = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             ForEach(0..<3, id: \.self) { index in
                 Image(systemName: index < filled ? "star.fill" : "star")
-                    .font(.system(size: emphasized ? 36 : 26, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(index < filled ? tint : TrackPalette.waiting.opacity(0.35))
-                    .scaleEffect(emphasized && index < filled && pulse ? 1.16 : 1)
+                    .opacity(index < filled ? 1 : 0.45)
+                    .scaleEffect(index < filled ? 1 : 0.92)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(.easeInOut(duration: 0.35), value: index < filled)
             }
         }
-        .frame(height: 44)
-        .onAppear { pulse = true }
-        .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: pulse)
+        .animation(.easeInOut(duration: 0.35), value: tint)
         .accessibilityLabel("\(filled) of 3")
     }
 }

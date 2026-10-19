@@ -82,29 +82,30 @@ final class GeometryTests: XCTestCase {
     }
 
     func testWallHitIsCountedOnceUntilTheFingerReturns() {
-        var model = RaceModel(glyph: playableA)
+        var model = RaceModel(glyph: longRoad)
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
-        model.move(to: point(0.25, on: stroke))
-        model.move(to: beside(0.25, on: stroke))
-        model.move(to: beside(0.25, on: stroke))
-        model.move(to: beside(0.25, on: stroke))
+        glide(&model, on: stroke, from: 0.02, to: 0.14, sideFrom: 0, sideTo: 12)
+        glide(&model, on: stroke, from: 0.14, to: 0.18, sideFrom: 12, sideTo: 12)
         XCTAssertEqual(model.wallHits, 1)
         XCTAssertEqual(model.phase, .tracing)
 
-        model.move(to: point(0.45, on: stroke))
-        model.move(to: beside(0.45, on: stroke))
+        glide(&model, on: stroke, from: 0.18, to: 0.30, sideFrom: 12, sideTo: 0)
+        glide(&model, on: stroke, from: 0.30, to: 0.42, sideFrom: 0, sideTo: 12)
         XCTAssertEqual(model.wallHits, 2)
+        XCTAssertEqual(model.phase, .tracing)
     }
 
     func testFourthWallHitFailsAndPressingTheCarTriesAgain() {
-        var model = RaceModel(glyph: playableA)
+        var model = RaceModel(glyph: longRoad)
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
-        for step in 0..<4 {
-            let progress = 0.15 + Double(step) * 0.1
-            model.move(to: point(progress, on: stroke))
-            model.move(to: beside(progress, on: stroke))
+        var progress = 0.02
+        for _ in 0..<4 {
+            glide(&model, on: stroke, from: progress, to: progress + 0.12, sideFrom: 0, sideTo: 12)
+            progress += 0.12
+            glide(&model, on: stroke, from: progress, to: progress + 0.12, sideFrom: 12, sideTo: 0)
+            progress += 0.12
         }
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(model.currentTrace.isEmpty)
@@ -116,16 +117,18 @@ final class GeometryTests: XCTestCase {
     }
 
     func testThreeWallHitsIsANiceTry() {
-        var model = RaceModel(glyph: playableA)
+        var model = RaceModel(glyph: longRoad)
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
-        for step in 0..<3 {
-            let leaving = 0.25 + Double(step) * 0.2
-            model.move(to: point(leaving, on: stroke))
-            model.move(to: beside(leaving, on: stroke))
-            model.move(to: point(0.4 + Double(step) * 0.2, on: stroke))
+        var progress = 0.02
+        for _ in 0..<3 {
+            glide(&model, on: stroke, from: progress, to: progress + 0.10, sideFrom: 0, sideTo: 12)
+            progress += 0.10
+            glide(&model, on: stroke, from: progress, to: progress + 0.10, sideFrom: 12, sideTo: 0)
+            progress += 0.10
         }
         XCTAssertEqual(model.wallHits, 3)
+        XCTAssertEqual(model.phase, .tracing)
         model.release(at: stroke.gate.center)
         XCTAssertEqual(model.phase, .almost)
         XCTAssertEqual(model.shownStars, 1)
@@ -201,20 +204,50 @@ final class GeometryTests: XCTestCase {
         var model = RaceModel(glyph: playableA)
         let stroke = model.activeStroke!
         model.press(at: stroke.start)
-        model.move(to: point(0.55, on: stroke))
-        model.move(to: beside(0.55, on: stroke))
+        glide(&model, on: stroke, from: 0.20, to: 0.50, sideFrom: 0, sideTo: 12)
         XCTAssertEqual(model.phase, .tracing)
         XCTAssertEqual(model.wallHits, 1)
 
-        var progress = 0.55
-        while progress > 0.35 {
+        var progress = 0.50
+        while progress > 0.20 {
             progress -= 0.02
-            model.move(to: beside(progress, on: stroke))
+            model.move(to: drifted(progress, on: stroke, sideways: 12))
             if model.phase == .failed { break }
         }
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(model.currentTrace.isEmpty)
         XCTAssertTrue(model.recordedPaths.isEmpty)
+    }
+
+    func testSharpCornerEndsTheStroke() {
+        var model = RaceModel(glyph: playableA)
+        let stroke = model.activeStroke!
+        let heading = RoadGeometry.heading(of: stroke.centerline)!
+        model.press(at: stroke.start)
+        model.move(to: point(0.35, on: stroke))
+        let tip = point(0.35, on: stroke)
+        let corner = LetterPoint(x: tip.x - heading.y * 16, y: tip.y + heading.x * 16)
+        model.move(to: corner)
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertTrue(model.currentTrace.isEmpty)
+        XCTAssertTrue(model.recordedPaths.isEmpty)
+    }
+
+    func testLineIsNotFinishedUntilTheStripes() {
+        var model = RaceModel(glyph: playableA)
+        let stroke = model.activeStroke!
+        model.press(at: stroke.start, time: 1)
+        model.move(to: point(0.82, on: stroke), time: 2)
+        XCTAssertEqual(model.phase, .tracing)
+
+        model.move(to: point(0.86, on: stroke), time: 2.2)
+        model.move(to: point(0.83, on: stroke), time: 2.3)
+        XCTAssertEqual(model.phase, .tracing)
+
+        model.move(to: stroke.gate.center, time: 2.6)
+        XCTAssertEqual(model.phase, .driving)
+        let last = model.recordedPaths[0].last
+        XCTAssertEqual(last?.distance(to: stroke.gate.center) ?? 99, 0, accuracy: 0.001)
     }
 
     func testReachingTheFinishStopsTheLine() {
@@ -228,7 +261,7 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(model.phase, .driving)
         let kept = model.recordedPaths[0].count
         let drawnFor = model.recordedDurations[0]
-        XCTAssertEqual(drawnFor, 1.6, accuracy: 0.05)
+        XCTAssertEqual(drawnFor, 1.9, accuracy: 0.05)
         XCTAssertEqual(model.playbackDuration, drawnFor, accuracy: 0.001)
 
         model.move(to: point(0.3, on: stroke), time: 9)
@@ -248,9 +281,8 @@ final class GeometryTests: XCTestCase {
         let bar = model.activeStroke!
         XCTAssertEqual(bar.id, 3)
         model.press(at: bar.start)
-        model.move(to: point(0.6, on: bar))
-        model.move(to: beside(0.6, on: bar))
-        model.move(to: beside(0.2, on: bar))
+        model.move(to: point(0.7, on: bar))
+        model.move(to: point(0.25, on: bar))
         XCTAssertEqual(model.phase, .failed)
         XCTAssertTrue(model.recordedPaths.count == 2)
     }
@@ -317,11 +349,44 @@ final class GeometryTests: XCTestCase {
         GlyphCatalog.glyph(id: "A")!
     }
 
-    private func beside(_ progress: Double, on stroke: LetterStroke) -> LetterPoint {
+    private var longRoad: Glyph {
+        let start = LetterPoint(x: 0, y: 0)
+        let end = LetterPoint(x: 200, y: 0)
+        let stroke = LetterStroke(
+            id: 1,
+            centerline: [start, end],
+            gate: FinishGate(center: end, radius: 13)
+        )
+        return Glyph(
+            id: "line",
+            symbol: "I",
+            kind: .letter,
+            track: LetterTrack(strokes: [stroke], roadHalfWidth: 9)
+        )
+    }
+
+    private func drifted(_ progress: Double, on stroke: LetterStroke, sideways: Double) -> LetterPoint {
         let base = point(progress, on: stroke)
         let start = stroke.centerline[0]
         let end = stroke.centerline[stroke.centerline.count - 1]
-        return RoadGeometry.shifted(base, from: start, toward: end, sideways: 20)
+        return RoadGeometry.shifted(base, from: start, toward: end, sideways: sideways)
+    }
+
+    private func glide(
+        _ model: inout RaceModel,
+        on stroke: LetterStroke,
+        from start: Double,
+        to end: Double,
+        sideFrom: Double,
+        sideTo: Double
+    ) {
+        let steps = 8
+        for step in 1...steps {
+            let t = Double(step) / Double(steps)
+            let progress = start + (end - start) * t
+            let side = sideFrom + (sideTo - sideFrom) * t
+            model.move(to: drifted(progress, on: stroke, sideways: side))
+        }
     }
 
     private func point(_ progress: Double, on stroke: LetterStroke) -> LetterPoint {

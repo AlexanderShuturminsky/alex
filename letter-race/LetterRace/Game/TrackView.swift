@@ -5,7 +5,7 @@ enum TrackPalette {
     static let ink = Color(red: 0.141, green: 0.204, blue: 0.278)
     static let road = Color(red: 0.369, green: 0.431, blue: 0.471)
     static let edge = Color(red: 0.173, green: 0.220, blue: 0.251)
-    static let dash = Color(red: 0.965, green: 0.945, blue: 0.902)
+    static let hint = Color(red: 0.99, green: 0.96, blue: 0.90)
     static let active = Color(red: 0.878, green: 0.478, blue: 0.184)
     static let waiting = Color(red: 0.235, green: 0.290, blue: 0.333)
     static let done = Color(red: 0.184, green: 0.490, blue: 0.353)
@@ -44,12 +44,12 @@ struct TrackView: View {
                 Canvas { context, _ in
                     drawTrack(context: context, viewport: viewport)
                 }
-                if model.phase == .failed {
-                    TrackPalette.fail.opacity(0.42)
-                        .allowsHitTesting(false)
-                }
-                pointer(viewport: viewport)
+                TrackPalette.fail
+                    .opacity(model.phase == .failed ? 0.42 : 0)
+                    .animation(.easeInOut(duration: 0.3), value: model.phase == .failed)
+                    .allowsHitTesting(false)
                 badges(viewport: viewport)
+                pointer(viewport: viewport)
                 TouchCapture(
                     enabled: model.isAcceptingTouch,
                     onBegin: { onBegin(viewport.letter(x: $0.x, y: $0.y), $1) },
@@ -65,15 +65,22 @@ struct TrackView: View {
 
     private func pointer(viewport: LetterViewport) -> some View {
         Group {
-            if model.showsPointer, let stroke = highlightedStroke, let heading = RoadGeometry.heading(of: stroke.centerline) {
-                let origin = stroke.start
+            if model.showsPointer,
+               viewport.scale > 0,
+               let stroke = highlightedStroke,
+               let heading = RoadGeometry.heading(of: stroke.centerline) {
+                let length = max(44, viewport.scale * 12)
+                let carRadius = Double(badgeSide(.active, viewport: viewport)) / viewport.scale / 2
+                let tipClearance = carRadius + 5
+                let centerBack = tipClearance + Double(length) / viewport.scale / 2
                 let mid = LetterPoint(
-                    x: origin.x - heading.x * 16,
-                    y: origin.y - heading.y * 16
+                    x: stroke.start.x - heading.x * centerBack,
+                    y: stroke.start.y - heading.y * centerBack
                 )
                 let angle = Angle(radians: atan2(heading.y, heading.x))
-                PointingArrow(angle: angle, length: max(52, viewport.scale * 16))
+                PointingArrow(angle: angle, length: length)
                     .position(cg(mid, viewport))
+                    .animation(.easeInOut(duration: 0.4), value: model.activeStrokeIndex)
             }
         }
     }
@@ -102,14 +109,16 @@ struct TrackView: View {
         for stroke in track.strokes {
             strokeRoad(stroke.centerline, width: half * 2 * viewport.scale, color: TrackPalette.road, viewport: viewport, context: context)
         }
-        for stroke in track.strokes {
+        for (index, stroke) in track.strokes.enumerated() {
+            let alpha = hintAlpha(index)
+            if alpha <= 0.01 { continue }
+            let strength = index == highlightedIndex ? 0.62 : 0.34
             strokeRoad(
                 stroke.centerline,
-                width: max(1.5, viewport.scale * 1.1),
-                color: TrackPalette.dash,
+                width: half * 0.95 * viewport.scale,
+                color: TrackPalette.hint.opacity(strength * alpha),
                 viewport: viewport,
-                context: context,
-                dash: [CGFloat(viewport.scale * 1.8), CGFloat(viewport.scale * 1.5)]
+                context: context
             )
         }
         for (index, stroke) in track.strokes.enumerated() {
@@ -170,6 +179,20 @@ struct TrackView: View {
             with: .color(active ? TrackPalette.active : TrackPalette.hatch.opacity(0.85)),
             style: StrokeStyle(lineWidth: active ? 2.4 : 1.6, lineCap: .round)
         )
+    }
+
+    /// The ghost of the stroke stays until that car reaches the hatches, then fades out.
+    private func hintAlpha(_ index: Int) -> Double {
+        switch model.phase {
+        case .success, .replaying:
+            return 0
+        case .driving:
+            if index < model.activeStrokeIndex { return 0 }
+            if index == model.activeStrokeIndex { return max(0, 1 - motion) }
+            return 1
+        default:
+            return index >= model.activeStrokeIndex ? 1 : 0
+        }
     }
 
     private func inkPaths() -> [(points: [LetterPoint], progress: Double)] {
@@ -301,11 +324,10 @@ private struct PointingArrow: View {
         ArrowShape()
             .fill(TrackPalette.active)
             .frame(width: length, height: length * 0.62)
-            .scaleEffect(pulse ? 1.12 : 0.9)
-            .offset(x: pulse ? length * 0.16 : 0)
+            .scaleEffect(pulse ? 1.06 : 0.94)
             .rotationEffect(angle)
-            .opacity(pulse ? 1 : 0.45)
-            .shadow(color: TrackPalette.active.opacity(0.55), radius: pulse ? 12 : 2)
+            .opacity(pulse ? 1 : 0.55)
+            .shadow(color: TrackPalette.active.opacity(0.45), radius: pulse ? 8 : 2)
             .allowsHitTesting(false)
             .onAppear { pulse = true }
             .animation(.easeInOut(duration: 0.65).repeatForever(autoreverses: true), value: pulse)

@@ -29,13 +29,16 @@ struct RaceModel: Equatable {
     static let maxWallHits = 3
     static let carReach = 12.0
     static let minimumTravel = 0.62
-    static let finishProgress = 0.8
+    /// The finger has to be this close to the hatched gate before the stroke counts.
+    static let finishReach = 5.0
     /// How far the finger must travel before a backward start counts.
     static let directionSample = 6.0
     /// Opening the stroke this far against its heading ends the attempt.
     static let openingProgress = 0.22
-    /// Going back along the road by this much stops the stroke.
-    static let backwardDistance = 4.0
+    /// A bend counts only after the finger has held the new direction this far.
+    static let cornerSpan = 8.0
+    /// Cosine of the sharpest turn still allowed. About 70 degrees.
+    static let cornerDot = 0.34
 
     var track: LetterTrack? { glyph.track }
 
@@ -86,17 +89,14 @@ struct RaceModel: Equatable {
         guard phase == .tracing, let stroke = activeStroke, let track else { return }
         let projection = RoadGeometry.project(point, onto: stroke.centerline)
         let inside = projection.distance <= track.roadHalfWidth
-        let inGate = point.distance(to: stroke.gate.center) <= stroke.gate.radius
 
-        if reachedFinish(progress: projection.progress, inside: inside, inGate: inGate) {
+        if reachedFinish(point, progress: projection.progress, halfWidth: track.roadHalfWidth, on: stroke) {
             currentTrace.append(point)
             finishStroke(at: time)
             return
         }
 
-        // Direction is compared with the stroke heading, on or off the asphalt.
-        // A finger that leaves the road and slides back used to keep laying ink.
-        if movingBackward(point, on: stroke) {
+        if turnedSharply(point, on: stroke) {
             currentTrace = []
             shownStars = 0
             phase = .failed
@@ -179,28 +179,72 @@ struct RaceModel: Equatable {
         clearAttempt()
     }
 
-    private func reachedFinish(progress: Double, inside: Bool, inGate: Bool) -> Bool {
-        let atEnd = inGate || (inside && progress >= Self.finishProgress)
-        return atEnd && maxProgress >= Self.minimumTravel
+    /// The hatches are the finish. Stopping at 80% of the road left the ink short of them,
+    /// and treating any slip behind the furthest point as a reverse did the same.
+    private func reachedFinish(
+        _ point: LetterPoint,
+        progress: Double,
+        halfWidth: Double,
+        on stroke: LetterStroke
+    ) -> Bool {
+        guard maxProgress >= Self.minimumTravel else { return false }
+        let gate = stroke.gate.center
+        if point.distance(to: gate) <= Self.finishReach { return true }
+        guard let heading = RoadGeometry.heading(of: stroke.centerline, at: progress) else { return false }
+        let along = (point.x - gate.x) * heading.x + (point.y - gate.y) * heading.y
+        let lateral = abs((point.x - gate.x) * -heading.y + (point.y - gate.y) * heading.x)
+        return lateral <= halfWidth && along >= -Self.finishReach
     }
 
-    /// True once the finger has moved back along the stroke by `backwardDistance`.
-    /// This is not limited to the road corridor: projection progress stays put
-    /// when the finger is beside the line, and the ink would otherwise follow.
-    private func movingBackward(_ point: LetterPoint, on stroke: LetterStroke) -> Bool {
+    /// A sharp corner, or a sustained move well off the stroke direction, ends the ink.
+    /// A short wobble does not: the new direction has to hold for `cornerSpan`.
+    private func turnedSharply(_ point: LetterPoint, on stroke: LetterStroke) -> Bool {
         if openedBackward(point, on: stroke) { return true }
-        guard maxProgress >= 0.03 else { return false }
-        guard let heading = RoadGeometry.heading(of: stroke.centerline, at: maxProgress) else { return false }
-
-        let furthest = RoadGeometry.point(at: maxProgress, along: stroke.centerline)
-        let fromFurthest = (point.x - furthest.x) * heading.x + (point.y - furthest.y) * heading.y
-        if fromFurthest < -Self.backwardDistance { return true }
-
-        if let previous = currentTrace.last {
-            let step = (point.x - previous.x) * heading.x + (point.y - previous.y) * heading.y
-            if step < -Self.backwardDistance { return true }
+        let samples = currentTrace + [point]
+        guard let recent = course(span: Self.cornerSpan, skip: 0, in: samples) else { return false }
+        if let heading = RoadGeometry.heading(of: stroke.centerline, at: maxProgress) {
+            let aligned = recent.x * heading.x + recent.y * heading.y
+            if aligned < Self.cornerDot { return true }
+        }
+        if let earlier = course(span: Self.cornerSpan, skip: Self.cornerSpan, in: samples) {
+            let turn = recent.x * earlier.x + recent.y * earlier.y
+            if turn < Self.cornerDot { return true }
         }
         return false
+    }
+
+    /// Unit direction of one stretch of the ink, walking backward from the finger.
+    /// Nil when that stretch folds back on itself, so a small correction is not a corner.
+    private func course(span: Double, skip: Double, in samples: [LetterPoint]) -> LetterPoint? {
+        guard let near = point(back: skip, in: samples),
+              let far = point(back: skip + span, in: samples) else { return nil }
+        let dx = near.x - far.x
+        let dy = near.y - far.y
+        let length = (dx * dx + dy * dy).squareRoot()
+        guard length >= span * 0.72 else { return nil }
+        return LetterPoint(x: dx / length, y: dy / length)
+    }
+
+    private func point(back distance: Double, in samples: [LetterPoint]) -> LetterPoint? {
+        guard var cursor = samples.last else { return nil }
+        if distance <= 0 { return cursor }
+        var remaining = distance
+        var index = samples.count - 1
+        while index > 0 {
+            let previous = samples[index - 1]
+            let leg = cursor.distance(to: previous)
+            if leg >= remaining {
+                let t = leg == 0 ? 0 : remaining / leg
+                return LetterPoint(
+                    x: cursor.x + (previous.x - cursor.x) * t,
+                    y: cursor.y + (previous.y - cursor.y) * t
+                )
+            }
+            remaining -= leg
+            cursor = previous
+            index -= 1
+        }
+        return nil
     }
 
     private mutating func finishStroke(at time: TimeInterval) {
