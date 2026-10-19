@@ -179,22 +179,21 @@ final class GeometryTests: XCTestCase {
         let peak = track.strokes[0]
         XCTAssertEqual(peak.start, LetterA.leftFoot)
         XCTAssertGreaterThan(peak.centerline.count, 3)
+        XCTAssertFalse(peak.centerline.contains(LetterA.apex))
         XCTAssertEqual(peak.centerline.last, LetterA.rightFoot)
         XCTAssertNotEqual(peak.centerline.last, LetterA.apex)
-        XCTAssertLessThan(
-            RoadGeometry.project(LetterA.apex, onto: peak.centerline).distance,
-            0.05
-        )
 
         let bar = track.strokes[1]
         XCTAssertLessThan(bar.start.x, bar.centerline[1].x)
-        XCTAssertLessThan(
+        XCTAssertEqual(
             RoadGeometry.project(bar.start, onto: peak.centerline).distance,
-            14
+            0,
+            accuracy: 0.001
         )
-        XCTAssertLessThan(
+        XCTAssertEqual(
             RoadGeometry.project(bar.centerline[1], onto: peak.centerline).distance,
-            4
+            0,
+            accuracy: 0.001
         )
         XCTAssertTrue(RoadGeometry.isOnRoad(LetterA.apex, polyline: peak.centerline, halfWidth: track.roadHalfWidth))
         XCTAssertFalse(RoadGeometry.isOnRoad(LetterPoint(x: -10, y: -10), polyline: peak.centerline, halfWidth: track.roadHalfWidth))

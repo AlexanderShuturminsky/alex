@@ -57,7 +57,7 @@ struct RaceView: View {
                 completeMotionIfNeeded(newValue)
             }
         }
-        .background((model.glyph.id == "A" ? TrackPalette.grass : TrackPalette.paper).ignoresSafeArea())
+        .background((model.glyph.id == "A" || model.glyph.id == "a" ? TrackPalette.grass : TrackPalette.paper).ignoresSafeArea())
         .navigationTitle(model.glyph.symbol)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.phase) { _, phase in
