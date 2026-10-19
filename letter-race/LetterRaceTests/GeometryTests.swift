@@ -199,26 +199,30 @@ final class GeometryTests: XCTestCase {
         XCTAssertFalse(RoadGeometry.isOnRoad(LetterPoint(x: -10, y: -10), polyline: peak.centerline, halfWidth: track.roadHalfWidth))
     }
 
-    func testBowlsAreWideOvalsAndCornersAreRound() {
+    func testBowlsAreTallOvalsAndCornersAreLightlyRound() {
         for symbol in ["a", "Q", "q"] {
             let bowl = GlyphCatalog.glyph(id: symbol)!.track!.strokes[0].centerline
             let size = bounds(of: bowl)
-            XCTAssertGreaterThan(size.width, size.height * 1.2, symbol)
+            XCTAssertGreaterThan(size.height, size.width * 1.2, symbol)
         }
 
         let bowls = LetterB.track.strokes[1].centerline
         let waist = bowls[bowls.count / 2]
         XCTAssertGreaterThan(sharpestCornerDot(on: bowls, skippingAround: waist), 0.90)
         let rightmost = bowls.max { $0.x < $1.x }!
-        XCTAssertGreaterThan(rightmost.x, waist.x + 28)
+        XCTAssertGreaterThan(rightmost.x, waist.x + 12)
+        XCTAssertLessThan(rightmost.x, waist.x + 22)
 
         let zigzag = LetterW.track.strokes[0].centerline
         let valley = LetterPoint(x: 32, y: 88)
         XCTAssertFalse(zigzag.contains(valley))
         let rounded = RoadGeometry.project(valley, onto: zigzag).distance
-        XCTAssertGreaterThan(rounded, 8)
-        XCTAssertLessThan(rounded, 22)
-        XCTAssertGreaterThan(sharpestCornerDot(on: zigzag, skippingAround: LetterPoint(x: -100, y: -100)), 0.90)
+        XCTAssertGreaterThan(rounded, 3)
+        XCTAssertLessThan(rounded, 9)
+        XCTAssertLessThan(
+            RoadGeometry.project(LetterA.apex, onto: LetterA.track.strokes[0].centerline).distance,
+            6
+        )
         XCTAssertEqual(LetterW.track.strokes.count, 1)
         XCTAssertEqual(LetterA.track.strokes.count, 2)
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Print capital A from the handwriting chart.
-/// Stroke 1 is one move: bottom-left, up over a rounded apex, down to the bottom-right.
+/// Stroke 1 is one move: bottom-left, up over a lightly rounded apex, down to the bottom-right.
 /// The apex is not a pen lift. Stroke 2 is the crossbar, left to right.
 enum LetterA {
     static let roadHalfWidth = 13.0
@@ -19,7 +19,7 @@ enum LetterA {
             strokes: [
                 LetterStroke(
                     id: 1,
-                    centerline: Manuscript.softened([leftFoot, apex, rightFoot], radius: 8),
+                    centerline: Manuscript.softened([leftFoot, apex, rightFoot], radius: 3),
                     gate: FinishGate(center: rightFoot, radius: gateRadius)
                 ),
                 LetterStroke(

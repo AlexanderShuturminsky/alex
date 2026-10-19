@@ -4,7 +4,7 @@ import Foundation
 /// Each stroke array is one numbered pen-down on the chart. A bend stays in that stroke.
 enum Manuscript {
     /// 0° is the top. Positive degrees run counterclockwise on the page.
-    /// A wider `radiusX` makes a bowl that is easier to sweep than a compass circle.
+    /// A larger `radiusY` makes a tall oval, easier to draw than a compass circle.
     static func oval(
         center: LetterPoint,
         radiusX: Double,
@@ -35,7 +35,7 @@ enum Manuscript {
         oval(center: center, radiusX: radius, radiusY: radius, fromDeg: fromDeg, toDeg: toDeg, steps: steps)
     }
 
-    /// Right-hand bowl: a wide semi-oval from `top` around to `bottom`, bulging right.
+    /// Right-hand bowl: a tall semi-oval from `top` around to `bottom`, bulging right.
     static func rightBowl(
         top: LetterPoint,
         bottom: LetterPoint,
@@ -222,19 +222,19 @@ enum Manuscript {
     }
 }
 
-/// Lowercase a: a wide oval from the top, counterclockwise, then the stem down.
+/// Lowercase a: a tall oval from the top, counterclockwise, then the stem down.
 enum LetterSmallA {
     static let track = Manuscript.track(
         strokes: [
             Manuscript.oval(
-                center: LetterPoint(x: 38, y: 62),
-                radiusX: 24,
-                radiusY: 16,
+                center: LetterPoint(x: 40, y: 62),
+                radiusX: 16,
+                radiusY: 22,
                 fromDeg: -25,
                 toDeg: 335,
                 steps: 24
             ),
-            [LetterPoint(x: 62, y: 48), LetterPoint(x: 62, y: 86)],
+            [LetterPoint(x: 56, y: 44), LetterPoint(x: 56, y: 88)],
         ],
         half: 12,
         fitSpan: Manuscript.span(of: LetterA.track.strokes.map(\.centerline)) * 0.85
@@ -242,17 +242,17 @@ enum LetterSmallA {
 }
 
 /// Capital B: the stem down, then both bowls in one curve from the top.
-/// Each bowl is a wide oval, so the right side is round and the waist can fold back.
+/// Each bowl is a tall oval, so the right side is round and the waist can fold back.
 enum LetterB {
-    private static let stemTop = LetterPoint(x: 30, y: 14)
-    private static let waist = LetterPoint(x: 30, y: 50)
-    private static let stemBottom = LetterPoint(x: 30, y: 88)
+    private static let stemTop = LetterPoint(x: 30, y: 12)
+    private static let waist = LetterPoint(x: 30, y: 48)
+    private static let stemBottom = LetterPoint(x: 30, y: 90)
 
     static let track = Manuscript.track(
         strokes: [
             [stemTop, stemBottom],
-            Manuscript.rightBowl(top: stemTop, bottom: waist, reach: 30)
-                + Manuscript.rightBowl(top: waist, bottom: stemBottom, reach: 36).dropFirst(),
+            Manuscript.rightBowl(top: stemTop, bottom: waist, reach: 13)
+                + Manuscript.rightBowl(top: waist, bottom: stemBottom, reach: 16).dropFirst(),
         ],
         half: 12
     )
@@ -266,51 +266,51 @@ enum LetterSmallB {
     static let track = Manuscript.track(
         strokes: [
             [LetterPoint(x: 34, y: 12), bowlBottom],
-            Manuscript.rightBowl(top: bowlTop, bottom: bowlBottom, reach: 28),
+            Manuscript.rightBowl(top: bowlTop, bottom: bowlBottom, reach: 14),
         ],
         half: 11,
         fitSpan: Manuscript.span(of: LetterB.track.strokes.map(\.centerline)) * 0.85
     )
 }
 
-/// Capital Q: a wide oval counterclockwise from the upper right, then a short curved tail.
+/// Capital Q: a tall oval counterclockwise from the upper right, then a short tail.
 enum LetterQ {
     static let track = Manuscript.track(
         strokes: [
             Manuscript.oval(
                 center: LetterPoint(x: 48, y: 46),
-                radiusX: 34,
-                radiusY: 24,
+                radiusX: 22,
+                radiusY: 30,
                 fromDeg: -40,
                 toDeg: 320,
                 steps: 28
             ),
             Manuscript.bend(
-                from: LetterPoint(x: 60, y: 62),
-                through: LetterPoint(x: 72, y: 76),
-                to: LetterPoint(x: 82, y: 90)
+                from: LetterPoint(x: 58, y: 64),
+                through: LetterPoint(x: 68, y: 76),
+                to: LetterPoint(x: 78, y: 88)
             ),
         ],
         half: 12
     )
 }
 
-/// Lowercase q: a wide oval, then a curved descender with a small hook.
+/// Lowercase q: a tall oval, then a descender with a small hook.
 enum LetterSmallQ {
     static let track = Manuscript.track(
         strokes: [
             Manuscript.oval(
-                center: LetterPoint(x: 38, y: 56),
-                radiusX: 20,
-                radiusY: 14,
+                center: LetterPoint(x: 40, y: 54),
+                radiusX: 14,
+                radiusY: 19,
                 fromDeg: -20,
                 toDeg: 340,
                 steps: 22
             ),
             Manuscript.bend(
-                from: LetterPoint(x: 58, y: 46),
-                through: LetterPoint(x: 52, y: 90),
-                to: LetterPoint(x: 74, y: 92)
+                from: LetterPoint(x: 54, y: 42),
+                through: LetterPoint(x: 54, y: 84),
+                to: LetterPoint(x: 66, y: 92)
             ),
         ],
         half: 11,
@@ -330,7 +330,7 @@ enum LetterW {
                     LetterPoint(x: 68, y: 88),
                     LetterPoint(x: 86, y: 16),
                 ],
-                radius: 6
+                radius: 2
             ),
         ],
         half: 9
@@ -349,7 +349,7 @@ enum LetterSmallW {
                     LetterPoint(x: 68, y: 84),
                     LetterPoint(x: 84, y: 48),
                 ],
-                radius: 5
+                radius: 1.5
             ),
         ],
         half: 8,
