@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RaceView: View {
+    @EnvironmentObject private var progress: ProgressStore
     @State private var model: RaceModel
     @State private var motionStart: Date?
     @State private var almostToken = 0
@@ -17,7 +18,9 @@ struct RaceView: View {
                     filled: starCount,
                     tint: model.phase == .almost ? TrackPalette.active : TrackPalette.gold
                 )
-                .frame(height: 64)
+                .frame(height: 52)
+                PassDots(filled: progress.progress.count(for: model.glyph.id))
+                    .frame(height: 16)
 
                 TrackView(
                     model: model,
@@ -56,6 +59,9 @@ struct RaceView: View {
         .onChange(of: model.phase) { _, phase in
             if phase == .driving || phase == .replaying {
                 motionStart = .now
+            }
+            if phase == .success {
+                progress.recordPass(for: model.glyph.id)
             }
             if phase == .almost {
                 almostToken += 1

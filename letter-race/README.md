@@ -2,15 +2,11 @@
 
 A first draft of Letter Race: each capital letter is a road, seen from above. A child presses the glowing car, traces that stroke, and the car drives the line they drew.
 
-This version is an iPhone app. Open it in Xcode and run it on the simulator or on your phone. The first playable track is uppercase **A**. The home grid already lists A–Z and 0–9 so the next glyphs are data, not new screens.
+This version is an iPhone app. Open it in Xcode and run it on the simulator or on your phone. The playable tracks are **A a, B b, Q q, and W w**. The home grid already lists every other letter and 0–9 so the next glyphs are data, not new screens.
 
 ## How A is written
 
-Beginners are taught a print capital A as three separate strokes, every one starting where the pen goes down (Handwriting Without Tears: “big line slides down, big line slides down, little line across”):
-
-1. From the top, down to the bottom-left foot
-2. From the top, down to the bottom-right foot
-3. The crossbar, left to right, where the middle of the letter meets the two legs
+The strokes follow a print handwriting chart. Capital A starts at the bottom-left and climbs to the top, then the crossbar goes left to right, then the right leg comes down. Each level is a capital with its lowercase. A and a are open first. B, Q, and W, each with its small letter, open in that order. A level opens after both letters in the previous one have been raced seven times. Seven long dashes under the letter fill in as those races succeed.
 
 Each stroke is one car. A pulsing arrow sits behind the next car and points along the stroke. There is no instruction text. A sharp corner, or going backward, stops the stroke. The ink ends in the middle of the hatched finish. More than three wall hits ends it as well. The car launches only when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. The replay drives each stroke for as long as the finger took to draw it.
 
@@ -38,7 +34,7 @@ The app targets iOS 17 and runs in portrait or landscape. Parental controls are 
 
 1. Describe the strokes in the same 0–100 space used by `LetterA` (y points down). One `LetterStroke` per pen-down: a centerline, and a finish gate on the last point.
 2. In `GlyphCatalog`, set that glyph’s `track`.
-3. Run the app. The tile changes from “Soon” to “Race”, and the race screen plays whatever track it is given.
+3. Run the app. The letter’s tile lights up, and the race screen plays whatever track it is given.
 
 Bridges, tunnels, and cursive can be added later as fields on a stroke. A does not use them.
 

@@ -94,7 +94,7 @@ struct RaceModel: Equatable {
             return
         }
 
-        if turnedSharply(point, on: stroke) {
+        if turnedSharply(point, projection: projection, inside: inside, on: stroke) {
             currentTrace = []
             shownStars = 0
             phase = .failed
@@ -194,19 +194,42 @@ struct RaceModel: Equatable {
 
     /// A sharp corner, or a sustained move well off the stroke direction, ends the ink.
     /// A short wobble does not: the new direction has to hold for `cornerSpan`.
-    private func turnedSharply(_ point: LetterPoint, on stroke: LetterStroke) -> Bool {
+    private func turnedSharply(
+        _ point: LetterPoint,
+        projection: RoadProjection,
+        inside: Bool,
+        on stroke: LetterStroke
+    ) -> Bool {
         if openedBackward(point, on: stroke) { return true }
+        // A bend that stays on the road is the letter, as in W or the bowls of B.
+        if inside && projection.progress + 0.02 >= maxProgress && !roadIsStraight(stroke) {
+            return false
+        }
         let samples = currentTrace + [point]
         guard let recent = course(span: Self.cornerSpan, skip: 0, in: samples) else { return false }
         if let heading = RoadGeometry.heading(of: stroke.centerline, at: maxProgress) {
             let aligned = recent.x * heading.x + recent.y * heading.y
             if aligned < Self.cornerDot { return true }
         }
-        if let earlier = course(span: Self.cornerSpan, skip: Self.cornerSpan, in: samples) {
+        if roadIsStraight(stroke), let earlier = course(span: Self.cornerSpan, skip: Self.cornerSpan, in: samples) {
             let turn = recent.x * earlier.x + recent.y * earlier.y
             if turn < Self.cornerDot { return true }
         }
         return false
+    }
+
+    private func roadIsStraight(_ stroke: LetterStroke) -> Bool {
+        let line = stroke.centerline
+        guard line.count >= 3, let first = RoadGeometry.heading(of: line) else { return true }
+        for index in 1..<(line.count - 1) {
+            let dx = line[index + 1].x - line[index].x
+            let dy = line[index + 1].y - line[index].y
+            let span = (dx * dx + dy * dy).squareRoot()
+            guard span > 0 else { continue }
+            let aligned = first.x * (dx / span) + first.y * (dy / span)
+            if aligned < 0.92 { return false }
+        }
+        return true
     }
 
     /// Unit direction of one stretch of the ink, walking backward from the finger.

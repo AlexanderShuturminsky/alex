@@ -55,15 +55,15 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(tiny.letter(x: 4, y: 4), LetterPoint(x: 0, y: 0))
     }
 
-    func testLetterAHasThreeSchoolStrokes() {
+    func testLetterAFollowsTheChart() {
         let track = LetterA.track
         XCTAssertEqual(track.strokes.map(\.id), [1, 2, 3])
-        XCTAssertEqual(track.strokes[0].start, LetterA.apex)
-        XCTAssertEqual(track.strokes[1].start, LetterA.apex)
-        XCTAssertEqual(track.strokes[0].centerline.last, LetterA.leftFoot)
-        XCTAssertEqual(track.strokes[1].centerline.last, LetterA.rightFoot)
+        XCTAssertEqual(track.strokes[0].start, LetterA.leftFoot)
+        XCTAssertEqual(track.strokes[0].centerline.last, LetterA.apex)
+        XCTAssertEqual(track.strokes[2].start, LetterA.apex)
+        XCTAssertEqual(track.strokes[2].centerline.last, LetterA.rightFoot)
 
-        let bar = track.strokes[2]
+        let bar = track.strokes[1]
         XCTAssertLessThan(bar.start.x, bar.centerline[1].x)
         XCTAssertEqual(
             RoadGeometry.project(bar.start, onto: track.strokes[0].centerline).distance,
@@ -71,25 +71,57 @@ final class GeometryTests: XCTestCase {
             accuracy: 0.001
         )
         XCTAssertEqual(
-            RoadGeometry.project(bar.centerline[1], onto: track.strokes[1].centerline).distance,
+            RoadGeometry.project(bar.centerline[1], onto: track.strokes[2].centerline).distance,
             0,
             accuracy: 0.001
         )
-        XCTAssertTrue(RoadGeometry.isOnRoad(LetterA.leftFoot, polyline: track.strokes[0].centerline, halfWidth: track.roadHalfWidth))
+        XCTAssertTrue(RoadGeometry.isOnRoad(LetterA.apex, polyline: track.strokes[0].centerline, halfWidth: track.roadHalfWidth))
         XCTAssertFalse(RoadGeometry.isOnRoad(LetterPoint(x: -10, y: -10), polyline: track.strokes[0].centerline, halfWidth: track.roadHalfWidth))
     }
 
-    func testCatalogOffersEveryLetterAndNumberWithOnlyAPlayable() {
+    func testChartLettersAndLevelUnlocks() {
         XCTAssertEqual(GlyphCatalog.letters.map(\.symbol), Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init))
+        XCTAssertEqual(GlyphCatalog.smallLetters.map(\.symbol), Array("abcdefghijklmnopqrstuvwxyz").map(String.init))
         XCTAssertEqual(GlyphCatalog.numbers.map(\.symbol), (0...9).map(String.init))
-        XCTAssertEqual(GlyphCatalog.all.count, 36)
-        XCTAssertTrue(GlyphCatalog.letters.allSatisfy { $0.kind == .letter })
-        XCTAssertTrue(GlyphCatalog.numbers.allSatisfy { $0.kind == .number })
-        XCTAssertEqual(GlyphCatalog.all.filter(\.isPlayable).map(\.id), ["A"])
-        XCTAssertTrue(GlyphCatalog.all.allSatisfy { $0.isPlayable == ($0.track != nil) })
+        XCTAssertEqual(GlyphCatalog.all.count, 62)
+        XCTAssertEqual(GlyphCatalog.playableLevels.map(\.id), ["A", "B", "Q", "W"])
         XCTAssertEqual(GlyphCatalog.glyph(id: "A")?.track?.strokes.count, 3)
-        XCTAssertNil(GlyphCatalog.glyph(id: "B")?.track)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "a")?.track?.strokes.count, 2)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "B")?.track?.strokes.count, 2)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "b")?.track?.strokes.count, 2)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "Q")?.track?.strokes.count, 2)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "q")?.track?.strokes.count, 2)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "W")?.track?.strokes.count, 1)
+        XCTAssertEqual(GlyphCatalog.glyph(id: "w")?.track?.strokes.count, 1)
+        XCTAssertNil(GlyphCatalog.glyph(id: "C")?.track)
         XCTAssertNil(GlyphCatalog.glyph(id: "?"))
+
+        var progress = LevelProgress()
+        let playable = GlyphCatalog.playableLevels
+        XCTAssertTrue(GlyphCatalog.isUnlocked(playable[0], progress: progress))
+        XCTAssertFalse(GlyphCatalog.isUnlocked(playable[1], progress: progress))
+        XCTAssertFalse(GlyphCatalog.isUnlocked(GlyphCatalog.levels[2], progress: progress))
+
+        for _ in 0..<6 {
+            progress.recordPass("A")
+            progress.recordPass("a")
+        }
+        XCTAssertFalse(GlyphCatalog.isUnlocked(playable[1], progress: progress))
+        progress.recordPass("A")
+        XCTAssertEqual(progress.count(for: "A"), 7)
+        XCTAssertFalse(GlyphCatalog.isUnlocked(playable[1], progress: progress))
+        progress.recordPass("a")
+        progress.recordPass("A")
+        XCTAssertEqual(progress.count(for: "A"), 7)
+        XCTAssertTrue(GlyphCatalog.isUnlocked(playable[1], progress: progress))
+        XCTAssertFalse(GlyphCatalog.isUnlocked(playable[2], progress: progress))
+
+        for _ in 0..<7 {
+            progress.recordPass("B")
+            progress.recordPass("b")
+        }
+        XCTAssertTrue(GlyphCatalog.isUnlocked(playable[2], progress: progress))
+        XCTAssertFalse(GlyphCatalog.isUnlocked(playable[3], progress: progress))
     }
 
     func testWallHitIsCountedOnceUntilTheFingerReturns() {
@@ -228,6 +260,18 @@ final class GeometryTests: XCTestCase {
         XCTAssertTrue(model.recordedPaths.isEmpty)
     }
 
+    func testZigzagLetterCanBeTracedThroughItsBends() {
+        var model = RaceModel(glyph: GlyphCatalog.glyph(id: "W")!)
+        let stroke = model.activeStroke!
+        model.press(at: stroke.start)
+        for step in 1...48 {
+            model.move(to: point(Double(step) / 48, on: stroke))
+        }
+        model.release(at: FinishZone.middle(on: stroke))
+        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.wallHits, 0)
+    }
+
     func testSharpCornerEndsTheStroke() {
         var model = RaceModel(glyph: playableA)
         let stroke = model.activeStroke!
@@ -291,16 +335,14 @@ final class GeometryTests: XCTestCase {
         var model = RaceModel(glyph: playableA)
         trace(&model, along: model.track!.strokes[0])
         model.motionFinished()
-        trace(&model, along: model.track!.strokes[1])
-        model.motionFinished()
 
         let bar = model.activeStroke!
-        XCTAssertEqual(bar.id, 3)
+        XCTAssertEqual(bar.id, 2)
         model.press(at: bar.start)
         model.move(to: point(0.7, on: bar))
         model.move(to: point(0.25, on: bar))
         XCTAssertEqual(model.phase, .failed)
-        XCTAssertTrue(model.recordedPaths.count == 2)
+        XCTAssertTrue(model.recordedPaths.count == 1)
     }
 
     func testLeavingEarlyDoesNotLaunchTheCar() {

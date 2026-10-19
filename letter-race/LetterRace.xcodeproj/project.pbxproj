@@ -19,6 +19,9 @@
 		A1000000000000000000B00A /* TouchCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00A /* TouchCapture.swift */; };
 		A1000000000000000000B00B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00B /* Assets.xcassets */; };
 		A1000000000000000000B00C /* GeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00C /* GeometryTests.swift */; };
+		A1000000000000000000B00D /* Manuscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00D /* Manuscript.swift */; };
+		A1000000000000000000B00E /* LevelProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00E /* LevelProgress.swift */; };
+		A1000000000000000000B00F /* ProgressStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F00F /* ProgressStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,6 +49,9 @@
 		A1000000000000000000F00A /* TouchCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchCapture.swift; sourceTree = "<group>"; };
 		A1000000000000000000F00B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000000000000000000F00C /* GeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000F00D /* Manuscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Manuscript.swift; sourceTree = "<group>"; };
+		A1000000000000000000F00E /* LevelProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelProgress.swift; sourceTree = "<group>"; };
+		A1000000000000000000F00F /* ProgressStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +96,7 @@
 				A1000000000000000000F001 /* LetterRaceApp.swift */,
 				A1000000000000000000F002 /* HomeView.swift */,
 				A1000000000000000000F003 /* RaceView.swift */,
+				A1000000000000000000F00F /* ProgressStore.swift */,
 				A10000000000000000000005 /* Game */,
 				A1000000000000000000F00B /* Assets.xcassets */,
 			);
@@ -102,6 +109,8 @@
 				A1000000000000000000F004 /* Glyph.swift */,
 				A1000000000000000000F005 /* GlyphCatalog.swift */,
 				A1000000000000000000F006 /* LetterA.swift */,
+				A1000000000000000000F00D /* Manuscript.swift */,
+				A1000000000000000000F00E /* LevelProgress.swift */,
 				A1000000000000000000F007 /* Geometry.swift */,
 				A1000000000000000000F008 /* RaceModel.swift */,
 				A1000000000000000000F009 /* TrackView.swift */,
@@ -214,6 +223,9 @@
 				A1000000000000000000B004 /* Glyph.swift in Sources */,
 				A1000000000000000000B005 /* GlyphCatalog.swift in Sources */,
 				A1000000000000000000B006 /* LetterA.swift in Sources */,
+				A1000000000000000000B00D /* Manuscript.swift in Sources */,
+				A1000000000000000000B00E /* LevelProgress.swift in Sources */,
+				A1000000000000000000B00F /* ProgressStore.swift in Sources */,
 				A1000000000000000000B007 /* Geometry.swift in Sources */,
 				A1000000000000000000B008 /* RaceModel.swift in Sources */,
 				A1000000000000000000B009 /* TrackView.swift in Sources */,
