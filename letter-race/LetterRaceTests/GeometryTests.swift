@@ -28,6 +28,43 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(pastEnd.closest.x, 10, accuracy: 0.001)
     }
 
+    func testDirectionMarksPointAlongTheRoad() {
+        let line = [LetterPoint(x: 0, y: 0), LetterPoint(x: 80, y: 0)]
+        let marks = RoadGeometry.directionMarks(along: line, spacing: 16, leadingInset: 14, trailingInset: 8)
+        XCTAssertEqual(marks.count, 4)
+        XCTAssertEqual(marks[0].point.x, 14, accuracy: 0.001)
+        XCTAssertEqual(marks[0].point.y, 0, accuracy: 0.001)
+        XCTAssertEqual(marks[0].heading.x, 1, accuracy: 0.001)
+        XCTAssertEqual(marks[0].heading.y, 0, accuracy: 0.001)
+        XCTAssertEqual(marks[0].progress, 14.0 / 80.0, accuracy: 0.001)
+        XCTAssertEqual(marks[3].point.x, 62, accuracy: 0.001)
+
+        let bend = [
+            LetterPoint(x: 0, y: 0),
+            LetterPoint(x: 40, y: 0),
+            LetterPoint(x: 40, y: 40),
+        ]
+        let turned = RoadGeometry.directionMarks(along: bend, spacing: 20, leadingInset: 10, trailingInset: 8)
+        let before = turned.filter { $0.point.x < 39 }
+        let after = turned.filter { $0.point.y > 1 }
+        XCTAssertFalse(before.isEmpty)
+        XCTAssertFalse(after.isEmpty)
+        XCTAssertGreaterThan(before[0].heading.x, 0.9)
+        XCTAssertGreaterThan(after[0].heading.y, 0.9)
+
+        let short = RoadGeometry.directionMarks(
+            along: [LetterPoint(x: 0, y: 0), LetterPoint(x: 20, y: 0)],
+            spacing: 16,
+            leadingInset: 14,
+            trailingInset: 8
+        )
+        XCTAssertEqual(short.count, 1)
+
+        for stroke in LetterA.track.strokes + LetterW.track.strokes {
+            XCTAssertFalse(RoadGeometry.directionMarks(along: stroke.centerline).isEmpty)
+        }
+    }
+
     func testPointAndPrefixAlongPolyline() {
         let line = [LetterPoint(x: 0, y: 0), LetterPoint(x: 10, y: 0)]
         let mid = RoadGeometry.point(at: 0.5, along: line)

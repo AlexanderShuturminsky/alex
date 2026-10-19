@@ -17,6 +17,12 @@ struct RoadProjection: Equatable {
     var closest: LetterPoint
 }
 
+struct DirectionMark: Equatable {
+    var point: LetterPoint
+    var heading: LetterPoint
+    var progress: Double
+}
+
 struct LetterViewport: Equatable {
     var width: Double
     var height: Double
@@ -133,6 +139,41 @@ enum RoadGeometry {
 
     static func heading(of polyline: [LetterPoint]) -> LetterPoint? {
         heading(of: polyline, at: 0)
+    }
+
+    /// Chevrons along a stroke. They start clear of the car and stop before the finish.
+    static func directionMarks(
+        along polyline: [LetterPoint],
+        spacing: Double = 16,
+        leadingInset: Double = 13,
+        trailingInset: Double = 9
+    ) -> [DirectionMark] {
+        let total = length(of: polyline)
+        guard total > 1, polyline.count >= 2 else { return [] }
+        let gap = max(spacing, 1)
+        let lead = min(max(0, leadingInset), total * 0.45)
+        let trail = min(max(0, trailingInset), total * 0.4)
+        var distances: [Double] = []
+        var cursor = lead
+        let limit = total - trail
+        if cursor <= limit {
+            while cursor <= limit + 0.001 {
+                distances.append(min(cursor, total))
+                cursor += gap
+            }
+        }
+        if distances.isEmpty {
+            distances = [total * 0.55]
+        }
+        return distances.compactMap { distance in
+            let progress = min(1, max(0, distance / total))
+            guard let heading = heading(of: polyline, at: progress) else { return nil }
+            return DirectionMark(
+                point: point(at: progress, along: polyline),
+                heading: heading,
+                progress: progress
+            )
+        }
     }
 
     /// Direction of the road at `progress`, so a curve's backward check follows the local stroke.

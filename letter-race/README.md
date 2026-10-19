@@ -10,7 +10,7 @@ The strokes follow a print handwriting chart. Capital A starts at the bottom-lef
 
 Each stroke is one car. A pulsing arrow sits behind the next car and points along the stroke. There is no instruction text. A sharp corner, or going backward, stops the stroke. The ink ends in the middle of the hatched finish. More than three wall hits ends it as well. The car launches only when the line stayed close to the middle of the road: three stars for a tight line, two to pass, one star for a loose line that has to be traced again. The replay drives each stroke for as long as the finger took to draw it.
 
-Each unfinished stroke shows a faint path down the middle of the road. That hint fades away once its car reaches the finish. The race screen turns off the system swipe-back, including the iOS 26 swipe that starts anywhere on the page. That gesture was grabbing the crossbar, the only left-to-right stroke. The back button still leaves the race.
+Each unfinished stroke shows a faint path down the middle of the road, with small chevrons that pulse along the direction. A chevron disappears as the line is drawn over it, and the path fades away once its car reaches the finish. The race screen turns off the system swipe-back, including the iOS 26 swipe that starts anywhere on the page. That gesture was grabbing the crossbar, the only left-to-right stroke. The back button still leaves the race.
 
 ## Run it
 

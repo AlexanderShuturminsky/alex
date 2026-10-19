@@ -48,6 +48,7 @@ struct TrackView: View {
                     .opacity(model.phase == .failed ? 0.42 : 0)
                     .animation(.easeInOut(duration: 0.3), value: model.phase == .failed)
                     .allowsHitTesting(false)
+                directionChevrons(viewport: viewport)
                 badges(viewport: viewport)
                 pointer(viewport: viewport)
                 TouchCapture(
@@ -184,6 +185,80 @@ struct TrackView: View {
         )
     }
 
+    /// Chevrons sit on the hint and leave as the finger draws over them.
+    @ViewBuilder
+    private func directionChevrons(viewport: LetterViewport) -> some View {
+        if showsDirectionMarks, viewport.scale > 0 {
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                let items = chevronItems(viewport: viewport, time: time)
+                ZStack {
+                    ForEach(items) { item in
+                        ChevronShape()
+                            .fill(TrackPalette.ink.opacity(item.opacity))
+                            .frame(width: item.along, height: item.across)
+                            .scaleEffect(item.scale)
+                            .rotationEffect(item.angle)
+                            .position(item.position)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private var showsDirectionMarks: Bool {
+        guard let strokes = model.track?.strokes else { return false }
+        return strokes.indices.contains { drawnProgress(for: $0) < 0.98 }
+    }
+
+    /// 1 means that stroke's line is already drawn, so its chevrons are gone.
+    private func drawnProgress(for index: Int) -> Double {
+        switch model.phase {
+        case .success, .replaying:
+            return 1
+        case .driving:
+            return index <= model.activeStrokeIndex ? 1 : 0
+        case .tracing:
+            if index < model.activeStrokeIndex { return 1 }
+            if index == model.activeStrokeIndex { return model.maxProgress }
+            return 0
+        default:
+            return index < model.activeStrokeIndex ? 1 : 0
+        }
+    }
+
+    private func chevronItems(viewport: LetterViewport, time: TimeInterval) -> [ChevronItem] {
+        guard let track = model.track else { return [] }
+        let half = track.roadHalfWidth
+        let along = CGFloat(max(16, viewport.scale * half * 1.15))
+        let across = CGFloat(max(14, viewport.scale * half * 0.95))
+        var items: [ChevronItem] = []
+        for (index, stroke) in track.strokes.enumerated() {
+            let drawn = drawnProgress(for: index)
+            guard drawn < 0.98 else { continue }
+            let emphasis = index == highlightedIndex ? 1.0 : 0.58
+            let marks = RoadGeometry.directionMarks(along: stroke.centerline)
+            for (markIndex, mark) in marks.enumerated() where mark.progress > drawn + 0.03 {
+                let wave = 0.5 + 0.5 * sin(time * 2.4 - mark.progress * 9)
+                let angle = Angle(radians: atan2(mark.heading.y, mark.heading.x))
+                items.append(
+                    ChevronItem(
+                        id: "\(stroke.id)-\(markIndex)",
+                        position: cg(mark.point, viewport),
+                        angle: angle,
+                        along: along,
+                        across: across,
+                        opacity: (0.58 + 0.42 * wave) * emphasis,
+                        scale: CGFloat(0.94 + 0.06 * wave)
+                    )
+                )
+            }
+        }
+        return items
+    }
+
     /// The ghost of the stroke stays until that car reaches the hatches, then fades out.
     private func hintAlpha(_ index: Int) -> Double {
         switch model.phase {
@@ -315,6 +390,28 @@ private struct CarBadge: View {
             .scaleEffect(pulsing && pulse ? 1.08 : 1)
             .onAppear { pulse = true }
             .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: pulse)
+    }
+}
+
+private struct ChevronItem: Identifiable {
+    var id: String
+    var position: CGPoint
+    var angle: Angle
+    var along: CGFloat
+    var across: CGFloat
+    var opacity: Double
+    var scale: CGFloat
+}
+
+private struct ChevronShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.04))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - rect.height * 0.04))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.42, y: rect.midY))
+        path.closeSubpath()
+        return path
     }
 }
 
