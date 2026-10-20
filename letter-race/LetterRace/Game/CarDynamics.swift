@@ -1,7 +1,8 @@
 import Foundation
 
-/// A car with its own speed. How fast the finger drew the stroke does not set the pace:
-/// the car cruises, brakes before a bend, and steps the rear out on a sharp one.
+/// A car with its own speed. Nothing pulls it onto the ink.
+/// The driver brakes for a bend, steers toward the road ahead, and if the tires
+/// cannot make the corner the rear steps out until the driver catches it.
 struct CarSimulation: Equatable {
     /// Time the rear tires smoke before the car takes off.
     static let burnout = 0.34
@@ -98,124 +99,192 @@ struct CarSimulation: Equatable {
         }
 
         let dt = 1.0 / 60.0
+        let driveAccel = 180.0
+        let brakeAccel = 200.0
         var position = path[0]
         var body = atan2(initial.y, initial.x)
         var speed = 0.0
         var lateral = 0.0
+        var velocityX = 0.0
+        var velocityY = 0.0
+        var yawRate = 0.0
         var spin = 0.0
-        var slideHold = 0.0
         var settledFor = 0.0
         var sincePuff = 1.0
         var anchor = 0.0
+        var committed = false
+        var straightFor = 0.0
         var samples: [Sample] = []
         var skids: [Skid] = []
         var puffs: [Puff] = []
         var time = 0.0
+        let finish = path[path.count - 1]
 
         while time <= maxTime + 0.0001 {
             let burning = time < burnout
+            let onRoad = RoadGeometry.project(position, onto: path, near: anchor)
+            anchor = onRoad.progress
+            let off = onRoad.distance
             let here = RoadGeometry.heading(of: path, at: anchor) ?? initial
-            let soon = RoadGeometry.heading(of: path, at: min(1, anchor + 14 / total)) ?? here
-            let later = RoadGeometry.heading(of: path, at: min(1, anchor + 28 / total)) ?? here
+            let soon = RoadGeometry.heading(of: path, at: min(1, anchor + 10 / total)) ?? here
+            // Look as far as the current stopping distance, so a fast car brakes
+            // for a bend it cannot yet reach slowly.
+            let brakeLook = clamp(speed * speed / (2 * brakeAccel) + 10, 14, 40)
+            let later = RoadGeometry.heading(of: path, at: min(1, anchor + brakeLook / total)) ?? here
             let roadTurn = wrap(angle(soon) - angle(here))
             let earlyTurn = wrap(angle(later) - angle(here))
-            let severity = max(abs(roadTurn), abs(earlyTurn))
+            let severity = max(abs(roadTurn), abs(earlyTurn) * 0.85)
 
-            let cornerLimit = cruise / (1 + severity * 2.1)
+            let cornerLimit = cruise / (1 + severity * 1.9)
+            // Radians per letter unit. The car only goes as fast as the tires can
+            // hold that bend, with a little grip left over so it does not float off.
+            let curve = max(abs(roadTurn) / 10, abs(earlyTurn) / max(brakeLook, 1))
+            let curveLimit = curve > 0.008 ? (110 / curve).squareRoot() : cruise
             let remaining = max(0, (1 - anchor) * total)
-            let stopping = speed * speed / (2 * 240) + 5
-            let endScale = remaining < stopping ? max(0, remaining / max(stopping, 0.001)) : 1.0
-            let wantedSpeed = burning ? 6.0 : cornerLimit * endScale
-            let braking = !burning && wantedSpeed + 2 < speed
-            let accel = burning ? 24.0 : (braking ? 280.0 : 180.0)
-            speed += clamp(wantedSpeed - speed, -accel * dt, accel * dt)
-            if speed < 0 { speed = 0 }
+            let gap = position.distance(to: finish)
+            let stopping = speed * speed / (2 * brakeAccel) + 3
+            var wantedSpeed = burning ? 5.5 : min(cornerLimit, curveLimit)
+            if !burning, remaining < stopping {
+                wantedSpeed *= max(0, remaining / stopping)
+            }
+            // Only the last part of the stroke uses the straight-line gap. A loop
+            // starts near its own finish, and that must not count as arriving.
+            if !burning, anchor > 0.72, gap < 12 {
+                wantedSpeed = min(wantedSpeed, max(0, gap * 1.35))
+            }
+            if !burning, gap > 2.5, gap < 16, speed < 8, anchor > 0.8, off < 4 {
+                wantedSpeed = max(wantedSpeed, min(10, gap * 1.1))
+            }
+            // A miss lifts the throttle. Accelerating while already wide is how a
+            // car leaves the letter instead of driving back onto it.
+            if !burning, off > 3.5 {
+                wantedSpeed = min(wantedSpeed, max(14, 46 - (off - 3.5) * 5))
+            }
+            // On a straight, a nose pointed off the road is not a moment to accelerate.
+            let headingError = abs(wrap(angle(here) - body))
+            if !burning, severity < 0.16, headingError > 0.3 {
+                wantedSpeed = min(wantedSpeed, max(16, 34 - (headingError - 0.3) * 20))
+            }
+            let braking = !burning && wantedSpeed + 1.5 < speed
 
-            let lookAhead = min(1, anchor + (7.5 + speed * 0.035) / total)
-            let look = RoadGeometry.point(at: lookAhead, along: path)
-            let desired = atan2(look.y - position.y, look.x - position.x)
-            let steer = clamp(wrap(desired - body), -0.95, 0.95)
-            let wheelbase = 8.0
-            let demandedYaw = speed / wheelbase * tan(steer)
-            let maxYaw = burning ? 0.55 : 2.4
-            let yaw = clamp(demandedYaw, -maxYaw, maxYaw)
-            body = wrap(body + yaw * dt)
+            let alongNow = velocityX * cos(body) + velocityY * sin(body)
+            let sideNow = -velocityX * sin(body) + velocityY * cos(body)
+            let slipAngle = atan2(sideNow, max(alongNow, 4))
 
-            if !burning && abs(roadTurn) > 0.5 && speed > 6.5 {
-                slideHold = 0.42
-            } else {
-                slideHold = max(0, slideHold - dt)
+            let nearest = RoadGeometry.point(at: anchor, along: path)
+            let closingSpeed = off > 0.35
+                ? ((nearest.x - position.x) * velocityX + (nearest.y - position.y) * velocityY) / off
+                : 0
+            let lookDistance = burning
+                ? 9.0
+                : (severity < 0.16
+                    ? clamp(16 + speed * 0.02, 16, 24)
+                    : clamp(5 + speed * 0.055, 6, 13))
+            let tightened = off > 2 ? lookDistance / (1 + (off - 2) * 0.28) : lookDistance
+            let lookAhead = max(2.8, tightened)
+            let look = RoadGeometry.point(at: min(1, anchor + lookAhead / total), along: path)
+            var aimX = look.x - position.x
+            var aimY = look.y - position.y
+            // Point back at the asphalt only while the car is still stepping out.
+            // Once it is already coming back, look ahead so it merges instead of crossing.
+            if !burning, off > 3.5, closingSpeed < 14 {
+                let pull = clamp((off - 3.5) / 6, 0, 0.72)
+                aimX = aimX * (1 - pull) + (nearest.x - position.x) * pull
+                aimY = aimY * (1 - pull) + (nearest.y - position.y) * pull
+            } else if !burning, severity < 0.16, off > 1.6, closingSpeed < 20 {
+                let pull = clamp((off - 1.6) / 12, 0, 0.28)
+                aimX = aimX * (1 - pull) + (nearest.x - position.x) * pull
+                aimY = aimY * (1 - pull) + (nearest.y - position.y) * pull
+            } else if !burning, anchor > 0.86, gap < 14, off < 3.5 {
+                aimX = finish.x - position.x
+                aimY = finish.y - position.y
             }
-            let sliding = slideHold > 0 && !burning
-            if sliding {
-                let outward: Double
-                if roadTurn == 0 {
-                    outward = lateral >= 0 ? 1 : -1
-                } else {
-                    outward = roadTurn > 0 ? -1 : 1
-                }
-                let wanted = outward * min(11, 5 + abs(roadTurn) * 3.2)
-                lateral += (wanted - lateral) * min(1, 9 * dt)
-            } else if !burning {
-                lateral *= max(0, 1 - 6 * dt)
+            let desired = atan2(aimY, aimX)
+            var error = wrap(desired - body)
+            // Countersteer only enough to keep a spin from passing the nose.
+            // Matching the velocity exactly points the car off the road.
+            if !burning, abs(slipAngle) > 0.78 {
+                let save = clamp(-slipAngle * 0.9, -0.55, 0.55)
+                error = error * 0.72 + save * 0.28
             }
-            lateral = clamp(lateral, -12, 12)
-            if burning {
-                lateral *= max(0, 1 - 4 * dt)
-            }
+
+            let recovering = off > 4.5 && closingSpeed < 8
+            let yawLimit = burning ? 0.4 : (recovering ? 4.5 : 3.15)
+            let response = severity < 0.08 ? 3.6 : 6.2
+            let targetYaw = clamp(error * response, -yawLimit, yawLimit)
+            yawRate += clamp(targetYaw - yawRate, -20 * dt, 20 * dt)
+            body = wrap(body + yawRate * dt)
 
             let forwardX = cos(body)
             let forwardY = sin(body)
             let sideX = -sin(body)
             let sideY = cos(body)
-            var velocityX = forwardX * speed + sideX * lateral
-            var velocityY = forwardY * speed + sideY * lateral
-
-            let nearest = RoadGeometry.project(position, onto: path, near: anchor)
-            let off = nearest.distance
-            var pull = burning ? 0.4 : (sliding ? 1.4 : 6.0)
-            if off > 9 { pull += (off - 9) * 1.2 }
-            if anchor > 0.93 { pull += 6 }
-            velocityX += (nearest.closest.x - position.x) * pull * dt
-            velocityY += (nearest.closest.y - position.y) * pull * dt
-
+            let along = velocityX * forwardX + velocityY * forwardY
+            let side = velocityX * sideX + velocityY * sideY
+            let tooWide = off > 4.5 && closingSpeed < 12
+            // A steady oval is a turn the tires can hold. The rear steps out only
+            // when the road ahead changes direction faster than that.
+            let turning = abs(roadTurn) > 0.55 || abs(earlyTurn) > 0.95
+            if severity < 0.12 {
+                straightFor += dt
+            } else {
+                straightFor = 0
+            }
+            // Keep the rear loose for a moment after the bend so the slide can
+            // finish, then let the tires hook up once the road is straight.
+            if burning || speed < 12 || abs(slipAngle) > 1.15 || straightFor > 0.12 {
+                committed = false
+            } else if !tooWide && turning && off < 3.2 {
+                committed = true
+            } else if abs(slipAngle) < 0.1 && abs(roadTurn) < 0.1 {
+                committed = false
+            }
+            let loose = committed && !tooWide
+            let tracking = !loose && !tooWide && severity < 0.16
+            let latLimit = tooWide ? 280.0 : (loose ? 42.0 : (tracking ? 220.0 : 190.0))
+            let latResponse = tooWide ? 16.0 : (loose ? 1.7 : (tracking ? 14.0 : 11.0))
+            let delta = wantedSpeed - along
+            let longForce: Double
+            if burning {
+                longForce = clamp(delta, -22, 22)
+            } else if abs(delta) < 6 {
+                longForce = delta * 6
+            } else {
+                longForce = sign(delta) * (delta < 0 ? brakeAccel : driveAccel)
+            }
+            var sideForce = clamp(-side * latResponse, -latLimit, latLimit)
+            let circle = tooWide ? 280.0 : (loose ? 70.0 : 230.0)
+            let force = hypot(longForce, sideForce)
+            if force > circle {
+                sideForce *= circle / force
+            }
+            velocityX += (forwardX * longForce + sideX * sideForce) * dt
+            velocityY += (forwardY * longForce + sideY * sideForce) * dt
             position.x += velocityX * dt
             position.y += velocityY * dt
-
-            let settled = RoadGeometry.project(position, onto: path, near: anchor)
-            if settled.distance > 8.2 {
-                let keep = 8.2 / settled.distance
-                position.x = settled.closest.x + (position.x - settled.closest.x) * keep
-                position.y = settled.closest.y + (position.y - settled.closest.y) * keep
-                lateral *= 0.7
-            }
-
-            if anchor > 0.92, let finish = path.last {
-                let catchUp = min(1, (anchor > 0.97 ? 9 : 2.5) * dt)
-                position.x += (finish.x - position.x) * catchUp
-                position.y += (finish.y - position.y) * catchUp
-            }
+            speed = hypot(velocityX, velocityY)
+            lateral = velocityX * sideX + velocityY * sideY
 
             let placed = RoadGeometry.project(position, onto: path, near: anchor)
             anchor = placed.progress
 
+            let moving = speed > 1
             let velocityAngle = atan2(velocityY, velocityX)
-            let moving = hypot(velocityX, velocityY) > 1
             let slip = moving ? min(1, abs(wrap(body - velocityAngle)) / 0.9) : 0
-            let spinRate = burning ? 24.0 : max(3.5, speed * 0.7)
+            let spinRate = burning ? 24.0 : max(3.5, speed * 0.55)
             spin += spinRate * dt
 
             let rear = LetterPoint(
                 x: position.x - forwardX * 5.4,
                 y: position.y - forwardY * 5.4
             )
-            let layingRubber = burning || sliding || slip > 0.34
+            let layingRubber = burning || loose || abs(slipAngle) > 0.22
             if layingRubber {
                 skids.append(Skid(
                     time: time,
                     position: rear,
                     body: body,
-                    strength: burning ? 0.85 : min(1, 0.45 + slip)
+                    strength: burning ? 0.85 : min(1, 0.4 + slip)
                 ))
             }
             sincePuff += dt
@@ -224,8 +293,8 @@ struct CarSimulation: Equatable {
                 puffs.append(Puff(
                     time: time,
                     position: rear,
-                    blowX: -forwardX * 7 + sideX * lateral * 0.35,
-                    blowY: -forwardY * 7 + sideY * lateral * 0.35
+                    blowX: -forwardX * 6 + sideX * lateral * 0.25,
+                    blowY: -forwardY * 6 + sideY * lateral * 0.25
                 ))
             }
 
@@ -234,7 +303,7 @@ struct CarSimulation: Equatable {
                 position: position,
                 body: body,
                 speed: speed,
-                slip: max(slip, sliding ? 0.55 : 0),
+                slip: slip,
                 spin: spin,
                 spinRate: spinRate,
                 burning: burning,
@@ -242,7 +311,8 @@ struct CarSimulation: Equatable {
                 progress: anchor
             ))
 
-            if let finish = path.last, anchor > 0.97, position.distance(to: finish) < 4 {
+            let slow = speed < 5 && abs(lateral) < 3
+            if anchor > 0.95, position.distance(to: finish) < 5, slow {
                 settledFor += dt
                 if settledFor >= settle { break }
             } else {
@@ -253,6 +323,12 @@ struct CarSimulation: Equatable {
 
         let duration = samples.last?.time ?? 0
         return CarSimulation(duration: duration, cruise: cruise, samples: samples, skids: skids, puffs: puffs)
+    }
+
+    private static func sign(_ value: Double) -> Double {
+        if value > 0 { return 1 }
+        if value < 0 { return -1 }
+        return 0
     }
 
     private static func angle(_ heading: LetterPoint) -> Double {

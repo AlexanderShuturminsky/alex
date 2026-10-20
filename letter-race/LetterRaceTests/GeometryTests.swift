@@ -620,6 +620,32 @@ final class GeometryTests: XCTestCase {
         XCTAssertGreaterThan(crownOff, 2.5, "apex offset \(crownOff)")
         XCTAssertLessThan(crownOff, 9.5, "apex offset \(crownOff)")
         XCTAssertLessThan(apex.sample(at: apex.duration).position.distance(to: peak.last ?? LetterA.rightFoot), 10)
+
+        let ovalPath = GlyphCatalog.glyph(id: "a")!.track!.strokes[0].centerline
+        let oval = CarSimulation.run(path: ovalPath)
+        let ovalWide = oval.samples
+            .map { RoadGeometry.project($0.position, onto: ovalPath, near: $0.progress).distance }
+            .max() ?? 0
+        XCTAssertLessThan(ovalWide, 9, "oval offset \(ovalWide)")
+        XCTAssertLessThan(oval.sample(at: oval.duration).position.distance(to: ovalPath.last!), 8)
+        XCTAssertLessThan(oval.duration, 7, "oval took \(oval.duration)")
+        XCTAssertLessThan(launch.duration, 4.5, "straight took \(launch.duration)")
+        XCTAssertLessThan(slide.duration, 6, "hairpin took \(slide.duration)")
+        XCTAssertLessThan(apex.duration, 6.5, "apex took \(apex.duration)")
+
+        for ride in [launch, slide, apex, oval] {
+            let jump = largestStep(in: ride)
+            XCTAssertLessThan(jump, 2.8, "the car jumped \(jump) in one frame")
+        }
+    }
+
+    private func largestStep(in ride: CarSimulation) -> Double {
+        var worst = 0.0
+        for index in 1..<ride.samples.count {
+            let step = ride.samples[index].position.distance(to: ride.samples[index - 1].position)
+            worst = max(worst, step)
+        }
+        return worst
     }
 
     private var playableA: Glyph {
