@@ -115,20 +115,19 @@ struct TrackView: View {
                         angle: carAngle(index: index, stroke: stroke),
                         imageName: stroke.id == 1 ? "CarRed" : "CarGreen",
                         braking: pose?.braking ?? false,
-                        pulsing: role == .active && model.showsPointer,
                         dimmed: role == .done
                     )
                 } else {
                     CarBadge(
                         number: stroke.id,
                         role: role,
-                        side: badgeSide(role, viewport: viewport),
-                        pulsing: role == .active && model.showsPointer
+                        side: badgeSide(role, viewport: viewport)
                     )
                 }
                 }
             }
             .position(place)
+            .animation(nil, value: place)
             .allowsHitTesting(false)
         }
     }
@@ -770,9 +769,7 @@ private struct PhotoCar: View {
     var angle: Angle
     var imageName: String
     var braking: Bool
-    var pulsing: Bool
     var dimmed: Bool
-    @State private var pulse = false
 
     var body: some View {
         let height = length * 0.46
@@ -798,9 +795,6 @@ private struct PhotoCar: View {
         .frame(width: length, height: height)
         .rotationEffect(angle)
         .opacity(dimmed ? 0.85 : 1)
-        .scaleEffect(pulsing && pulse ? 1.045 : 1)
-        .onAppear { pulse = true }
-        .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: pulse)
     }
 }
 
@@ -808,8 +802,6 @@ private struct CarBadge: View {
     var number: Int
     var role: CarRole
     var side: CGFloat
-    var pulsing: Bool
-    @State private var pulse = false
 
     var body: some View {
         Text("\(number)")
@@ -821,10 +813,6 @@ private struct CarBadge: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(.white.opacity(role == .active ? 0.95 : 0.35), lineWidth: role == .active ? 2 : 1)
             )
-            .shadow(color: role == .active ? TrackPalette.active.opacity(pulse ? 0.7 : 0.25) : .clear, radius: pulse ? 12 : 4)
-            .scaleEffect(pulsing && pulse ? 1.08 : 1)
-            .onAppear { pulse = true }
-            .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: pulse)
     }
 }
 
