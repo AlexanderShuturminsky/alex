@@ -7,16 +7,23 @@ struct RaceView: View {
     @State private var ride: CarSimulation?
     @State private var arrivalBegan: Date?
     @State private var almostToken = 0
+    @State private var recordedPass = false
 
     init(glyph: Glyph) {
         _model = State(initialValue: RaceModel(glyph: glyph))
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: motionStart == nil && arrivalBegan == nil)) { timeline in
+        let shouldAnimateChevrons = model.phase == .awaiting || model.phase == .tracing
+        let isTimelinePaused = motionStart == nil && arrivalBegan == nil && !shouldAnimateChevrons
+        let interval = (motionStart != nil || arrivalBegan != nil || (model.phase == .tracing && model.liveCar.hasLaunched))
+            ? (1.0 / 60.0)
+            : (1.0 / 24.0)
+        TimelineView(.animation(minimumInterval: interval, paused: isTimelinePaused)) { timeline in
             let elapsed = elapsedTime(at: timeline.date)
             let motion = inkMotion(elapsed: elapsed)
             let arrival = arrivalProgress(at: timeline.date)
+            let chevronTime = timeline.date.timeIntervalSinceReferenceDate
             ZStack {
                 TrackView(
                     model: model,
@@ -24,6 +31,7 @@ struct RaceView: View {
                     ride: ride,
                     driveTime: elapsed,
                     arrival: arrival,
+                    chevronTime: chevronTime,
                     onBegin: { model.press(at: $0, time: $1) },
                     onMove: { model.move(to: $0, time: $1) },
                     onEnd: { model.release(at: $0, time: $1) },
@@ -41,17 +49,31 @@ struct RaceView: View {
                     Spacer()
                     ZStack {
                         if model.phase == .success {
-                            Button {
-                                model.reset()
-                            } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                                    .font(.system(size: 28, weight: .bold))
-                                    .foregroundStyle(TrackPalette.ink)
-                                    .frame(width: 64, height: 64)
-                                    .background(TrackPalette.success, in: Circle())
+                            HStack(spacing: 18) {
+                                Button {
+                                    model.replay()
+                                } label: {
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 26, weight: .bold))
+                                        .foregroundStyle(TrackPalette.ink)
+                                        .frame(width: 64, height: 64)
+                                        .background(TrackPalette.gold, in: Circle())
+                                }
+                                .accessibilityLabel("Replay")
+
+                                Button {
+                                    recordedPass = false
+                                    model.reset()
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.system(size: 28, weight: .bold))
+                                        .foregroundStyle(TrackPalette.ink)
+                                        .frame(width: 64, height: 64)
+                                        .background(TrackPalette.success, in: Circle())
+                                }
+                                .accessibilityLabel("Race again")
                             }
                             .transition(.opacity.combined(with: .scale(scale: 0.86)))
-                            .accessibilityLabel("Race again")
                         }
                     }
                     .frame(height: 72)
@@ -60,12 +82,19 @@ struct RaceView: View {
                 .padding(.top, 4)
                 .allowsHitTesting(model.phase == .success)
             }
-            .onChange(of: timeline.date) { _, date in
+            .onChange(of: timeline.date) { oldDate, date in
+                if model.phase == .tracing, model.liveCar.hasLaunched {
+                    let frameDt = min(0.05, max(0, date.timeIntervalSince(oldDate)))
+                    model.advanceLiveCar(
+                        dt: frameDt > 0 ? frameDt : 1.0 / 60.0,
+                        at: ProcessInfo.processInfo.systemUptime
+                    )
+                }
                 completeArrivalIfNeeded(date)
                 completeMotionIfNeeded(elapsedTime(at: date))
             }
         }
-        .background((model.glyph.id == "A" || model.glyph.id == "a" ? TrackPalette.grass : TrackPalette.paper).ignoresSafeArea())
+        .background((usesRacingDrive ? TrackPalette.grass : TrackPalette.paper).ignoresSafeArea())
         .navigationTitle(model.glyph.symbol)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.activeStrokeIndex) { _, index in
@@ -79,7 +108,8 @@ struct RaceView: View {
             if phase == .driving || phase == .replaying {
                 motionStart = .now
             }
-            if phase == .success {
+            if phase == .success, !recordedPass {
+                recordedPass = true
                 progress.recordPass(for: model.glyph.id)
             }
             if phase == .almost {
@@ -104,32 +134,28 @@ struct RaceView: View {
         switch model.phase {
         case .almost, .driving:
             return model.shownStars
+        case .awaiting, .tracing:
+            return model.earnedStars.min() ?? model.shownStars
         default:
             return model.earnedStars.min() ?? 0
         }
     }
 
     private var usesRacingDrive: Bool {
-        model.glyph.id == "A" || model.glyph.id == "a"
+        model.glyph.isPlayable
     }
 
-    /// The next car rolls onto its start. The first car is already waiting.
+    /// Zero pause between strokes: the next car is immediately parked and ready at its start.
     private func beginArrival(for index: Int) {
-        guard usesRacingDrive, model.phase == .awaiting, index > 0 else {
-            arrivalBegan = nil
-            return
-        }
-        arrivalBegan = .now
+        arrivalBegan = nil
     }
 
     private func arrivalProgress(at date: Date) -> Double {
-        guard usesRacingDrive, model.phase == .awaiting, model.activeStrokeIndex > 0, let arrivalBegan else { return 1 }
-        return min(1, max(0, date.timeIntervalSince(arrivalBegan) / 0.42))
+        1
     }
 
     private func completeArrivalIfNeeded(_ date: Date) {
-        guard let arrivalBegan, date.timeIntervalSince(arrivalBegan) >= 0.42 else { return }
-        self.arrivalBegan = nil
+        arrivalBegan = nil
     }
 
     private func elapsedTime(at date: Date) -> Double {
@@ -165,7 +191,8 @@ struct RaceView: View {
             ride = nil
             return
         }
-        ride = CarSimulation.run(path: model.recordedPaths[index])
+        let liveStart = model.phase == .driving ? model.completedLiveCar : nil
+        ride = CarSimulation.run(path: model.recordedPaths[index], startingFrom: liveStart)
     }
 }
 

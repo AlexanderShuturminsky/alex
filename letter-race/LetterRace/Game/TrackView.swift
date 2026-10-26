@@ -40,6 +40,7 @@ struct TrackView: View {
     var driveTime: TimeInterval
     /// 0 is off the start, 1 is parked on it. The next car rolls in after the previous one finishes.
     var arrival: Double = 1
+    var chevronTime: TimeInterval = 0
     var onBegin: (LetterPoint, TimeInterval) -> Void
     var onMove: (LetterPoint, TimeInterval) -> Void
     var onEnd: (LetterPoint, TimeInterval) -> Void
@@ -47,7 +48,7 @@ struct TrackView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let viewport = LetterViewport(width: geo.size.width, height: geo.size.height)
+            let viewport = LetterViewport(width: geo.size.width, height: geo.size.height, track: model.track)
             ZStack {
                 Canvas { context, size in
                     drawTrack(context: context, viewport: viewport, canvas: size)
@@ -60,7 +61,7 @@ struct TrackView: View {
                 badges(viewport: viewport)
                 pointer(viewport: viewport)
                 TouchCapture(
-                    enabled: model.isAcceptingTouch && arrival >= 0.98,
+                    enabled: model.isAcceptingTouch,
                     onBegin: { onBegin(viewport.letter(x: $0.x, y: $0.y), $1) },
                     onMove: { onMove(viewport.letter(x: $0.x, y: $0.y), $1) },
                     onEnd: { onEnd(viewport.letter(x: $0.x, y: $0.y), $1) },
@@ -98,7 +99,7 @@ struct TrackView: View {
     }
 
     private var usesRacingTrack: Bool {
-        model.glyph.id == "A" || model.glyph.id == "a"
+        model.glyph.isPlayable
     }
 
     private func badges(viewport: LetterViewport) -> some View {
@@ -110,11 +111,14 @@ struct TrackView: View {
                 if showsThisCar(index) {
                 if usesRacingTrack {
                     let pose = movingPose(index)
+                    let liveBraking = (model.phase == .tracing && index == model.activeStrokeIndex && model.liveCar.hasLaunched)
+                        ? model.liveCar.braking
+                        : false
                     PhotoCar(
                         length: carLength(viewport: viewport),
                         angle: carAngle(index: index, stroke: stroke),
-                        imageName: stroke.id == 1 ? "CarRed" : "CarGreen",
-                        braking: pose?.braking ?? false,
+                        imageName: stroke.id.isMultiple(of: 2) ? "CarGreen" : "CarRed",
+                        braking: (pose?.braking ?? false) || liveBraking,
                         dimmed: role == .done
                     )
                 } else {
@@ -132,14 +136,14 @@ struct TrackView: View {
         }
     }
 
-    /// On A and a, the other cars stay off the road so two of them never cross.
+    /// On racing tracks, the other cars stay off the road so two of them never cross.
     private func showsThisCar(_ index: Int) -> Bool {
         guard usesRacingTrack else { return true }
         return index == highlightedIndex && model.phase != .success
     }
 
     private func carLength(viewport: LetterViewport) -> CGFloat {
-        CGFloat(max(84, viewport.scale * 18))
+        CGFloat(max(62, viewport.scale * 13.5))
     }
 
     private func movingPose(_ index: Int) -> CarSimulation.Sample? {
@@ -150,6 +154,9 @@ struct TrackView: View {
     private func carAngle(index: Int, stroke: LetterStroke) -> Angle {
         if let pose = movingPose(index) {
             return Angle(radians: pose.body)
+        }
+        if model.phase == .tracing, index == model.activeStrokeIndex, model.liveCar.hasLaunched {
+            return Angle(radians: model.liveCar.body)
         }
         let path: [LetterPoint]
         let progress: Double
@@ -180,20 +187,17 @@ struct TrackView: View {
         }
         let half = track.roadHalfWidth
         for stroke in track.strokes {
-            let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
-            strokeRoad(paved, width: (half * 2 + 2.4) * viewport.scale, color: TrackPalette.edge, viewport: viewport, context: context)
+            strokeRoad(stroke.endPaved, width: (half * 2 + 2.4) * viewport.scale, color: TrackPalette.edge, viewport: viewport, context: context)
         }
         for stroke in track.strokes {
-            let paved = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.endOffset)
-            strokeRoad(paved, width: half * 2 * viewport.scale, color: TrackPalette.road, viewport: viewport, context: context)
+            strokeRoad(stroke.endPaved, width: half * 2 * viewport.scale, color: TrackPalette.road, viewport: viewport, context: context)
         }
         for (index, stroke) in track.strokes.enumerated() {
             let alpha = hintAlpha(index)
             if alpha <= 0.01 { continue }
             let strength = index == highlightedIndex ? 0.62 : 0.34
-            let guide = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.middleOffset)
             strokeRoad(
-                guide,
+                stroke.middleGuide,
                 width: half * 0.34 * viewport.scale,
                 color: TrackPalette.hint.opacity(strength * alpha),
                 viewport: viewport,
@@ -215,7 +219,7 @@ struct TrackView: View {
         let curbExtra = max(8, viewport.scale * 2.5)
         let curbWidth = roadWidth + curbExtra * 2
         let dash = CGFloat(max(11, viewport.scale * 3.4))
-        let pieces = roadPieces(of: track)
+        let pieces = track.cachedPieces
         let shadow = CGSize(width: viewport.scale * 0.35, height: max(4, viewport.scale * 1.05))
         for piece in pieces {
             strokeRoad(
@@ -243,10 +247,9 @@ struct TrackView: View {
             strokeRoad(piece.asphalt, width: roadWidth, color: TrackPalette.asphalt, viewport: viewport, context: context)
         }
         if let stroke = highlightedStroke, hintAlpha(highlightedIndex) > 0.01 {
-            let guide = FinishZone.extended(stroke.centerline, on: stroke, through: FinishZone.middleOffset)
             let mark = CGFloat(max(7, viewport.scale * 2.1))
             strokeRoad(
-                guide,
+                stroke.middleGuide,
                 width: max(2.2, half * 0.16 * viewport.scale),
                 color: .white.opacity(0.92 * hintAlpha(highlightedIndex)),
                 viewport: viewport,
@@ -255,15 +258,18 @@ struct TrackView: View {
                 cap: .butt
             )
         }
-        if model.phase != .success, let stroke = highlightedStroke {
-            drawCheckeredGate(stroke, roads: pieces.map(\.asphalt), viewport: viewport, context: context)
-        }
-        if let ride {
-            drawSkids(ride, until: driveTime, viewport: viewport, context: context)
-            drawSmoke(ride, at: driveTime, viewport: viewport, context: context)
+        if model.phase != .success, track.cachedGates.indices.contains(highlightedIndex) {
+            drawCheckeredGate(track.cachedGates[highlightedIndex], viewport: viewport, context: context)
         }
         let ink = model.phase == .almost ? TrackPalette.active : TrackPalette.racingLine
         drawInk(viewport: viewport, context: context, color: ink)
+        if let ride {
+            drawSkids(ride.skids, until: driveTime, viewport: viewport, context: context)
+            drawSmoke(ride.puffs, at: driveTime, viewport: viewport, context: context)
+        } else if model.phase == .tracing, model.liveCar.hasLaunched {
+            drawSkids(model.liveCar.skids, until: model.liveCar.elapsed, viewport: viewport, context: context)
+            drawSmoke(model.liveCar.puffs, at: model.liveCar.elapsed, viewport: viewport, context: context)
+        }
     }
 
     private func drawLawn(context: GraphicsContext, canvas: CGSize) {
@@ -280,41 +286,46 @@ struct TrackView: View {
         }
     }
 
-    private func drawSkids(_ ride: CarSimulation, until time: Double, viewport: LetterViewport, context: GraphicsContext) {
-        let visible = ride.skids.filter { $0.time <= time + 0.0001 }
+    private func drawSkids(_ skids: [CarSimulation.Skid], until time: Double, viewport: LetterViewport, context: GraphicsContext) {
+        let visible = skids.filter { $0.time <= time + 0.0001 }
         guard visible.count >= 2 else { return }
         let halfTrack = Double(carLength(viewport: viewport)) / viewport.scale * 0.155
-        let width = max(2.4, viewport.scale * 0.62)
+        let width = CGFloat(max(2.4, viewport.scale * 0.62))
+        var lightPath = Path()
+        var darkPath = Path()
+
         for side in [-1.0, 1.0] {
-            var run: [LetterPoint] = []
-            var lastTime = -1.0
-            func flush() {
-                if run.count >= 2 {
-                    strokeRoad(
-                        run,
-                        width: width,
-                        color: Color.black.opacity(0.48),
-                        viewport: viewport,
-                        context: context
-                    )
+            for index in 1..<visible.count {
+                let prev = visible[index - 1]
+                let curr = visible[index]
+                guard curr.time - prev.time <= 0.08 else { continue }
+                let prevSideX = -sin(prev.body) * halfTrack * side
+                let prevSideY = cos(prev.body) * halfTrack * side
+                let currSideX = -sin(curr.body) * halfTrack * side
+                let currSideY = cos(curr.body) * halfTrack * side
+                let p0 = cg(LetterPoint(x: prev.position.x + prevSideX, y: prev.position.y + prevSideY), viewport)
+                let p1 = cg(LetterPoint(x: curr.position.x + currSideX, y: curr.position.y + currSideY), viewport)
+                let strength = (prev.strength + curr.strength) * 0.5
+                if strength >= 0.62 {
+                    darkPath.move(to: p0)
+                    darkPath.addLine(to: p1)
+                } else {
+                    lightPath.move(to: p0)
+                    lightPath.addLine(to: p1)
                 }
-                run = []
             }
-            for skid in visible {
-                if lastTime >= 0, skid.time - lastTime > 0.08 {
-                    flush()
-                }
-                let sideX = -sin(skid.body) * halfTrack * side
-                let sideY = cos(skid.body) * halfTrack * side
-                run.append(LetterPoint(x: skid.position.x + sideX, y: skid.position.y + sideY))
-                lastTime = skid.time
-            }
-            flush()
+        }
+        let style = StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
+        if !lightPath.isEmpty {
+            context.stroke(lightPath, with: .color(.black.opacity(0.36)), style: style)
+        }
+        if !darkPath.isEmpty {
+            context.stroke(darkPath, with: .color(.black.opacity(0.54)), style: style)
         }
     }
 
-    private func drawSmoke(_ ride: CarSimulation, at time: Double, viewport: LetterViewport, context: GraphicsContext) {
-        for puff in ride.puffs where puff.time <= time {
+    private func drawSmoke(_ puffs: [CarSimulation.Puff], at time: Double, viewport: LetterViewport, context: GraphicsContext) {
+        for puff in puffs where puff.time <= time {
             let age = time - puff.time
             guard age < 0.9 else { continue }
             let fade = 1 - age / 0.9
@@ -335,8 +346,7 @@ struct TrackView: View {
     }
 
     private func drawInk(viewport: LetterViewport, context: GraphicsContext, color: Color) {
-        for ink in inkPaths() {
-            let partial = RoadGeometry.prefix(ink.points, through: ink.progress)
+        for partial in inkPaths() where partial.count >= 2 {
             strokeRoad(
                 partial,
                 width: max(4, viewport.scale * 3.4),
@@ -367,130 +377,26 @@ struct TrackView: View {
         for point in points.dropFirst() {
             path.addLine(to: shifted(point))
         }
-        var style = StrokeStyle(lineWidth: CGFloat(width), lineCap: cap, lineJoin: cap == .butt ? .bevel : .round)
+        var style = StrokeStyle(lineWidth: CGFloat(width), lineCap: cap, lineJoin: .round)
         if let dash {
             style.dash = dash
         }
         context.stroke(path, with: .color(color), style: style)
     }
 
-    /// One outline for the whole letter. A stroke that ends inside another stroke
-    /// stops its curb at that edge, so the join is a single road instead of two caps.
-    private func roadPieces(of track: LetterTrack) -> [(asphalt: [LetterPoint], curb: [LetterPoint])] {
-        let half = track.roadHalfWidth
-        let strokes = track.strokes
-        return strokes.enumerated().map { index, stroke in
-            let line = stroke.centerline
-            guard line.count >= 2 else { return (line, line) }
-            let startJoined = joins(line[0], besides: index, strokes: strokes, half: half)
-            let endJoined = joins(line[line.count - 1], besides: index, strokes: strokes, half: half)
-            var asphalt = line
-            if !endJoined {
-                asphalt = FinishZone.extended(line, on: stroke, through: FinishZone.endOffset)
-            }
-            var curb = asphalt
-            if startJoined {
-                curb = trim(curb, fromEnd: false, besides: index, strokes: strokes, half: half)
-            }
-            if endJoined {
-                curb = trim(curb, fromEnd: true, besides: index, strokes: strokes, half: half)
-            }
-            if curb.count < 2 { curb = asphalt }
-            return (asphalt, curb)
-        }
-    }
-
-    private func joins(_ point: LetterPoint, besides index: Int, strokes: [LetterStroke], half: Double) -> Bool {
-        for (other, stroke) in strokes.enumerated() where other != index {
-            if RoadGeometry.project(point, onto: stroke.centerline).distance <= half * 1.25 {
-                return true
-            }
-        }
-        return false
-    }
-
-    private func covered(_ point: LetterPoint, besides index: Int, strokes: [LetterStroke], half: Double) -> Bool {
-        for (other, stroke) in strokes.enumerated() where other != index {
-            if RoadGeometry.project(point, onto: stroke.centerline).distance <= half * 0.94 {
-                return true
-            }
-        }
-        return false
-    }
-
-    /// Drops the end that sits inside another stroke, stopping where that road's edge is.
-    private func trim(
-        _ line: [LetterPoint],
-        fromEnd: Bool,
-        besides index: Int,
-        strokes: [LetterStroke],
-        half: Double
-    ) -> [LetterPoint] {
-        guard line.count >= 2 else { return line }
-        let sequence = fromEnd ? Array(line.reversed()) : line
-        if !covered(sequence[0], besides: index, strokes: strokes, half: half) { return line }
-        var traveled = 0.0
-        var previous = sequence[0]
-        for point in sequence.dropFirst() {
-            let step = previous.distance(to: point)
-            if !covered(point, besides: index, strokes: strokes, half: half) {
-                let cut = traveled + step * 0.55
-                let trimmed = fromEnd ? drop(cut, fromEndOf: line) : drop(cut, fromStartOf: line)
-                return trimmed.count >= 2 ? trimmed : line
-            }
-            traveled += step
-            previous = point
-        }
-        return line
-    }
-
-    private func drop(_ distance: Double, fromStartOf line: [LetterPoint]) -> [LetterPoint] {
-        guard line.count >= 2, distance > 0 else { return line }
-        var left = distance
-        var index = 0
-        while index < line.count - 1 {
-            let step = line[index].distance(to: line[index + 1])
-            if left <= step {
-                let t = step > 0 ? left / step : 0
-                let mid = LetterPoint(
-                    x: line[index].x + (line[index + 1].x - line[index].x) * t,
-                    y: line[index].y + (line[index + 1].y - line[index].y) * t
-                )
-                return [mid] + Array(line[(index + 1)...])
-            }
-            left -= step
-            index += 1
-        }
-        return [line[line.count - 1]]
-    }
-
-    private func drop(_ distance: Double, fromEndOf line: [LetterPoint]) -> [LetterPoint] {
-        let trimmed = drop(distance, fromStartOf: Array(line.reversed()))
-        return Array(trimmed.reversed())
-    }
-
     /// Black and white squares across the road, from the first hatch through the end of the pavement.
     private func drawCheckeredGate(
-        _ stroke: LetterStroke,
-        roads: [[LetterPoint]],
+        _ gate: CheckeredGateCache,
         viewport: LetterViewport,
         context: GraphicsContext
     ) {
-        guard stroke.centerline.count >= 2,
-              let heading = RoadGeometry.heading(of: stroke.centerline, at: 1) else { return }
-        let end = stroke.centerline[stroke.centerline.count - 1]
+        let end = gate.end
+        let heading = gate.heading
         let endV = cg(end, viewport)
         let ahead = cg(LetterPoint(x: end.x + heading.x, y: end.y + heading.y), viewport)
         let angle = atan2(ahead.y - endV.y, ahead.x - endV.x)
         let alongScale = viewport.viewScale(along: heading)
         let acrossScale = viewport.viewScale(across: heading)
-        let half = model.track?.roadHalfWidth ?? 10
-        let bandStart = FinishZone.offsets.first ?? 0
-        let bandEnd = FinishZone.endOffset
-        let rows = 6
-        let cellAcross = (half * 2) / Double(rows)
-        let columns = max(2, Int(((bandEnd - bandStart) / cellAcross).rounded()))
-        let cellAlong = (bandEnd - bandStart) / Double(columns)
         let forwardX = cos(angle)
         let forwardY = sin(angle)
         let sideX = cos(angle + .pi / 2)
@@ -503,35 +409,33 @@ struct TrackView: View {
             )
         }
 
-        for row in 0..<rows {
-            for column in 0..<columns {
-                let along0 = bandStart + Double(column) * cellAlong
-                let across0 = -half + Double(row) * cellAcross
-                let center = LetterPoint(
-                    x: end.x + heading.x * (along0 + cellAlong / 2) - heading.y * (across0 + cellAcross / 2),
-                    y: end.y + heading.y * (along0 + cellAlong / 2) + heading.x * (across0 + cellAcross / 2)
-                )
-                let onRoad = roads.contains { road in
-                    RoadGeometry.project(center, onto: road).distance <= half * 0.98
-                }
-                if !onRoad { continue }
-                var path = Path()
-                path.move(to: corner(along: along0, across: across0))
-                path.addLine(to: corner(along: along0 + cellAlong, across: across0))
-                path.addLine(to: corner(along: along0 + cellAlong, across: across0 + cellAcross))
-                path.addLine(to: corner(along: along0, across: across0 + cellAcross))
-                path.closeSubpath()
-                let black = (row + column).isMultiple(of: 2)
-                context.fill(path, with: .color(black ? Color.black : Color.white))
+        var blackPath = Path()
+        var whitePath = Path()
+        for cell in gate.cells {
+            var rectPath = Path()
+            rectPath.move(to: corner(along: cell.along0, across: cell.across0))
+            rectPath.addLine(to: corner(along: cell.along0 + cell.cellAlong, across: cell.across0))
+            rectPath.addLine(to: corner(along: cell.along0 + cell.cellAlong, across: cell.across0 + cell.cellAcross))
+            rectPath.addLine(to: corner(along: cell.along0, across: cell.across0 + cell.cellAcross))
+            rectPath.closeSubpath()
+            if cell.isBlack {
+                blackPath.addPath(rectPath)
+            } else {
+                whitePath.addPath(rectPath)
             }
         }
-        let shared = roads.filter { RoadGeometry.project(end, onto: $0).distance <= half * 0.5 }.count
-        if shared < 2 {
+        if !whitePath.isEmpty {
+            context.fill(whitePath, with: .color(.white))
+        }
+        if !blackPath.isEmpty {
+            context.fill(blackPath, with: .color(.black))
+        }
+        if gate.drawsBorder {
             var border = Path()
-            border.move(to: corner(along: bandStart, across: -half))
-            border.addLine(to: corner(along: bandEnd, across: -half))
-            border.addLine(to: corner(along: bandEnd, across: half))
-            border.addLine(to: corner(along: bandStart, across: half))
+            border.move(to: corner(along: gate.bandStart, across: -gate.half))
+            border.addLine(to: corner(along: gate.bandEnd, across: -gate.half))
+            border.addLine(to: corner(along: gate.bandEnd, across: gate.half))
+            border.addLine(to: corner(along: gate.bandStart, across: gate.half))
             border.closeSubpath()
             context.stroke(border, with: .color(.black.opacity(0.85)), lineWidth: max(1.5, viewport.scale * 0.28))
         }
@@ -571,22 +475,19 @@ struct TrackView: View {
     @ViewBuilder
     private func directionChevrons(viewport: LetterViewport) -> some View {
         if showsDirectionMarks, viewport.scale > 0 {
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
-                let time = timeline.date.timeIntervalSinceReferenceDate
-                let items = chevronItems(viewport: viewport, time: time)
-                ZStack {
-                    ForEach(items) { item in
-                        ChevronShape()
-                            .fill((usesRacingTrack ? Color.white : TrackPalette.ink).opacity(item.opacity))
-                            .frame(width: item.along, height: item.across)
-                            .scaleEffect(item.scale)
-                            .rotationEffect(item.angle)
-                            .position(item.position)
-                            .allowsHitTesting(false)
-                    }
+            let items = chevronItems(viewport: viewport, time: chevronTime)
+            ZStack {
+                ForEach(items) { item in
+                    ChevronShape()
+                        .fill((usesRacingTrack ? Color.white : TrackPalette.ink).opacity(item.opacity))
+                        .frame(width: item.along, height: item.across)
+                        .scaleEffect(item.scale)
+                        .rotationEffect(item.angle)
+                        .position(item.position)
+                        .allowsHitTesting(false)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -621,7 +522,7 @@ struct TrackView: View {
             guard index == highlightedIndex else { continue }
             let drawn = drawnProgress(for: index)
             guard drawn < 0.98 else { continue }
-            let marks = RoadGeometry.directionMarks(along: stroke.centerline)
+            let marks = stroke.directionMarks
             for (markIndex, mark) in marks.enumerated() where mark.progress > drawn + 0.03 {
                 let wave = 0.5 + 0.5 * sin(time * 2.4 - mark.progress * 9)
                 let angle = Angle(radians: atan2(mark.heading.y, mark.heading.x))
@@ -655,20 +556,47 @@ struct TrackView: View {
         }
     }
 
-    private func inkPaths() -> [(points: [LetterPoint], progress: Double)] {
+    private func inkPaths() -> [[LetterPoint]] {
         switch model.phase {
+        case .driving:
+            guard model.recordedPaths.indices.contains(model.activeStrokeIndex) else { return [] }
+            let path = model.recordedPaths[model.activeStrokeIndex]
+            let consumed = usesRacingTrack ? (ride?.sample(at: driveTime).progress ?? motion) : motion
+            return [RoadGeometry.suffix(path, from: consumed)]
         case .replaying:
-            return model.recordedPaths.enumerated().compactMap { index, path in
-                if index < model.replayIndex { return (path, 1) }
-                if index == model.replayIndex { return (path, motion) }
-                return nil
-            }
-        default:
-            var paths = model.recordedPaths.map { (points: $0, progress: 1.0) }
-            if !model.currentTrace.isEmpty {
-                paths.append((model.currentTrace, 1))
+            var paths: [[LetterPoint]] = []
+            for index in model.recordedPaths.indices {
+                if index == model.replayIndex {
+                    let path = model.recordedPaths[index]
+                    let consumed = usesRacingTrack ? (ride?.sample(at: driveTime).progress ?? motion) : motion
+                    paths.append(RoadGeometry.suffix(path, from: consumed))
+                } else if index > model.replayIndex {
+                    paths.append(model.recordedPaths[index])
+                }
             }
             return paths
+        case .tracing:
+            var paths = Array(model.recordedPaths.prefix(model.activeStrokeIndex))
+            if !model.currentTrace.isEmpty {
+                if model.liveCar.hasLaunched {
+                    let livePath = model.cachedLivePath.isEmpty ? model.currentTrace : model.cachedLivePath
+                    let liveCum = model.cachedLivePath.isEmpty ? nil : model.cachedLiveCumulative
+                    paths.append(RoadGeometry.suffix(livePath, cumulative: liveCum, from: model.liveCar.progress))
+                } else {
+                    paths.append(model.currentTrace)
+                }
+            }
+            return paths
+        case .awaiting, .failed:
+            return Array(model.recordedPaths.prefix(model.activeStrokeIndex))
+        case .almost:
+            var paths = Array(model.recordedPaths.prefix(model.activeStrokeIndex))
+            if !model.currentTrace.isEmpty {
+                paths.append(model.currentTrace)
+            }
+            return paths
+        default:
+            return []
         }
     }
 
@@ -727,6 +655,9 @@ struct TrackView: View {
     private func carPoint(index: Int, stroke: LetterStroke) -> LetterPoint {
         if let pose = movingPose(index) {
             return pose.position
+        }
+        if model.phase == .tracing, index == model.activeStrokeIndex, model.liveCar.hasLaunched {
+            return model.liveCar.position
         }
         if isMoving(index), model.recordedPaths.indices.contains(index) {
             return RoadGeometry.point(at: motion, along: model.recordedPaths[index])

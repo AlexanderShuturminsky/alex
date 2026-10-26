@@ -10,9 +10,16 @@ struct LetterLevel: Equatable, Identifiable {
     var isPlayable: Bool { capital.isPlayable && small.isPlayable }
 }
 
-/// Every letter and digit the app knows about.
+/// Every starter shape, letter, and digit the app knows about.
 /// A glyph becomes a race when its `track` is set.
 enum GlyphCatalog {
+    /// Three pre-letter single-stroke warm-up shapes: Line, Curve, and Circle.
+    static let starters: [Glyph] = [
+        Glyph(id: "shape-line", symbol: "∣", kind: .shape, track: StarterLine.track),
+        Glyph(id: "shape-curve", symbol: "⌒", kind: .shape, track: StarterCurve.track),
+        Glyph(id: "shape-circle", symbol: "◯", kind: .shape, track: StarterCircle.track),
+    ]
+
     static let levels: [LetterLevel] = makeLevels()
 
     private static func makeLevels() -> [LetterLevel] {
@@ -42,7 +49,11 @@ enum GlyphCatalog {
     static var playableLevels: [LetterLevel] { levels.filter(\.isPlayable) }
 
     static func glyph(id: String) -> Glyph? {
-        all.first { $0.id == id }
+        (starters + all).first { $0.id == id }
+    }
+
+    static func isStarterUnlocked(_ glyph: Glyph, progress: LevelProgress) -> Bool {
+        glyph.kind == .shape && glyph.isPlayable
     }
 
     /// The first playable pair is open. Each later pair waits until the

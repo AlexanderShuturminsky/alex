@@ -109,6 +109,22 @@ enum Manuscript {
         }
     }
 
+    /// Evenly spaced points along a straight segment so road trimming can clip accurately.
+    static func subdivided(
+        from start: LetterPoint,
+        to end: LetterPoint,
+        steps: Int = 16
+    ) -> [LetterPoint] {
+        let count = max(steps, 1)
+        return (0...count).map { step in
+            let t = Double(step) / Double(count)
+            return LetterPoint(
+                x: start.x + (end.x - start.x) * t,
+                y: start.y + (end.y - start.y) * t
+            )
+        }
+    }
+
     private static func appendFillet(
         prev: LetterPoint,
         corner: LetterPoint,
@@ -237,6 +253,52 @@ enum Manuscript {
             roadHalfWidth: half
         )
     }
+}
+
+/// Starter 1: a single straight vertical stroke down the center.
+enum StarterLine {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.subdivided(
+                from: LetterPoint(x: 50, y: 12),
+                to: LetterPoint(x: 50, y: 88),
+                steps: 16
+            ),
+        ],
+        half: 10
+    )
+}
+
+/// Starter 2: a single smooth curve (bowl) stroke from top to bottom.
+enum StarterCurve {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.rightBowl(
+                top: LetterPoint(x: 30, y: 14),
+                bottom: LetterPoint(x: 30, y: 86),
+                reach: 44,
+                steps: 20
+            ),
+        ],
+        half: 10
+    )
+}
+
+/// Starter 3: a single full oval/circle loop stroke counterclockwise from the top.
+enum StarterCircle {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.oval(
+                center: LetterPoint(x: 50, y: 50),
+                radiusX: 28,
+                radiusY: 36,
+                fromDeg: 0,
+                toDeg: 360,
+                steps: 32
+            ),
+        ],
+        half: 9.5
+    )
 }
 
 /// Lowercase a: a slightly tall oval from the top, counterclockwise, then the stem down.

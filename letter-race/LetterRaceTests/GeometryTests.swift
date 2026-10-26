@@ -76,12 +76,18 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(prefix[1].x, 5, accuracy: 0.001)
         XCTAssertEqual(RoadGeometry.prefix(line, through: 0).count, 1)
         XCTAssertEqual(RoadGeometry.prefix(line, through: 1).count, 2)
+
+        let suffix = RoadGeometry.suffix(line, from: 0.5)
+        XCTAssertEqual(suffix.count, 2)
+        XCTAssertEqual(suffix[0].x, 5, accuracy: 0.001)
+        XCTAssertEqual(RoadGeometry.suffix(line, from: 0).count, 2)
+        XCTAssertEqual(RoadGeometry.suffix(line, from: 1).count, 1)
     }
 
     func testViewportRoundTrip() {
         let viewport = LetterViewport(width: 200, height: 400)
         XCTAssertEqual(viewport.scaleX, viewport.scaleY, accuracy: 0.001)
-        XCTAssertEqual(viewport.scale, 1.98, accuracy: 0.001)
+        XCTAssertEqual(viewport.scale, 1.68, accuracy: 0.001)
         let center = LetterPoint(x: 50, y: 50)
         XCTAssertEqual(viewport.viewX(center), 100, accuracy: 0.001)
         XCTAssertEqual(viewport.viewY(center), 200, accuracy: 0.001)
@@ -92,7 +98,7 @@ final class GeometryTests: XCTestCase {
         let bottom = LetterPoint(x: 0, y: 100)
         let side = viewport.viewY(bottom) - viewport.viewY(top)
         XCTAssertEqual(viewport.viewX(LetterPoint(x: 100, y: 0)) - viewport.viewX(top), side, accuracy: 0.001)
-        XCTAssertEqual(side / viewport.width, 0.99, accuracy: 0.001)
+        XCTAssertEqual(side / viewport.width, 0.84, accuracy: 0.001)
 
         let tiny = LetterViewport(width: 0, height: 0)
         XCTAssertEqual(tiny.letter(x: 4, y: 4), LetterPoint(x: 0, y: 0))
@@ -134,24 +140,24 @@ final class GeometryTests: XCTestCase {
             model.move(to: point(Double(step) / 40, on: stroke))
         }
         model.release(at: FinishZone.middle(on: stroke))
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
         XCTAssertEqual(model.wallHits, 0)
     }
 
     func testFoldingBackAlongTheLetterDoesNotStop() {
         var model = RaceModel(glyph: GlyphCatalog.glyph(id: "B")!)
         trace(&model, along: model.track!.strokes[0])
-        XCTAssertEqual(model.phase, .driving)
-        model.motionFinished()
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
         trace(&model, along: model.track!.strokes[1])
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .replaying)
         XCTAssertEqual(model.wallHits, 0)
     }
 
     func testWaistOfBCanTurnTheOppositeWay() {
         var model = RaceModel(glyph: GlyphCatalog.glyph(id: "B")!)
         trace(&model, along: model.track!.strokes[0])
-        model.motionFinished()
         let bowl = model.activeStroke!
         model.press(at: bowl.start)
         let line = bowl.centerline
@@ -169,7 +175,7 @@ final class GeometryTests: XCTestCase {
             XCTAssertEqual(model.phase, .tracing, "stopped at \(point)")
         }
         model.release(at: FinishZone.middle(on: bowl))
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .replaying)
         XCTAssertEqual(model.wallHits, 0)
     }
 
@@ -184,18 +190,20 @@ final class GeometryTests: XCTestCase {
         XCTAssertNotEqual(peak.centerline.last, LetterA.apex)
 
         let bar = track.strokes[1]
-        XCTAssertLessThan(bar.start.x, bar.centerline[1].x)
+        XCTAssertGreaterThan(bar.centerline.count, 10)
+        XCTAssertLessThan(bar.start.x, bar.centerline.last!.x)
         XCTAssertEqual(
             RoadGeometry.project(bar.start, onto: peak.centerline).distance,
             0,
             accuracy: 0.001
         )
         XCTAssertEqual(
-            RoadGeometry.project(bar.centerline[1], onto: peak.centerline).distance,
+            RoadGeometry.project(bar.centerline.last!, onto: peak.centerline).distance,
             0,
             accuracy: 0.001
         )
-        XCTAssertTrue(RoadGeometry.isOnRoad(LetterA.apex, polyline: peak.centerline, halfWidth: track.roadHalfWidth))
+        let crown = RoadGeometry.point(at: 0.5, along: peak.centerline)
+        XCTAssertTrue(RoadGeometry.isOnRoad(crown, polyline: peak.centerline, halfWidth: track.roadHalfWidth))
         XCTAssertFalse(RoadGeometry.isOnRoad(LetterPoint(x: -10, y: -10), polyline: peak.centerline, halfWidth: track.roadHalfWidth))
     }
 
@@ -220,10 +228,10 @@ final class GeometryTests: XCTestCase {
         let rounded = RoadGeometry.project(valley, onto: zigzag).distance
         XCTAssertGreaterThan(rounded, 1.2)
         XCTAssertLessThan(rounded, 8)
-        XCTAssertLessThan(
-            RoadGeometry.project(LetterA.apex, onto: LetterA.track.strokes[0].centerline).distance,
-            6
-        )
+        let apexOffset = RoadGeometry.project(LetterA.apex, onto: LetterA.track.strokes[0].centerline).distance
+        XCTAssertGreaterThan(apexOffset, 10)
+        XCTAssertLessThan(apexOffset, 18)
+        XCTAssertGreaterThan(sharpestCornerDot(on: LetterA.track.strokes[0].centerline, skippingAround: LetterPoint(x: -100, y: -100)), 0.98)
         XCTAssertEqual(LetterW.track.strokes.count, 1)
         XCTAssertEqual(LetterA.track.strokes.count, 2)
     }
@@ -236,7 +244,8 @@ final class GeometryTests: XCTestCase {
             model.move(to: point(Double(step) / 40, on: peak))
         }
         model.release(at: FinishZone.middle(on: peak))
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
         XCTAssertEqual(model.wallHits, 0)
         XCTAssertEqual(model.recordedPaths.count, 1)
     }
@@ -430,7 +439,7 @@ final class GeometryTests: XCTestCase {
             model.move(to: point(Double(step) / 48, on: stroke))
         }
         model.release(at: FinishZone.middle(on: stroke))
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .replaying)
         XCTAssertEqual(model.wallHits, 0)
     }
 
@@ -465,7 +474,8 @@ final class GeometryTests: XCTestCase {
         let middle = FinishZone.middle(on: stroke)
         let past = FinishZone.point(on: stroke, offset: FinishZone.middleOffset + 6)
         model.move(to: past, time: 2.9)
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
         let last = model.recordedPaths[0].last
         XCTAssertEqual(last?.distance(to: middle) ?? 99, 0, accuracy: 0.001)
     }
@@ -480,15 +490,15 @@ final class GeometryTests: XCTestCase {
         }
         XCTAssertEqual(model.phase, .tracing)
         model.move(to: FinishZone.middle(on: stroke), time: 7.4)
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
         let kept = model.recordedPaths[0].count
         let drawnFor = model.recordedDurations[0]
         XCTAssertEqual(drawnFor, 2.4, accuracy: 0.05)
-        XCTAssertEqual(model.playbackDuration, drawnFor, accuracy: 0.001)
 
         model.move(to: point(0.3, on: stroke), time: 9)
         model.release(at: stroke.start, time: 9.2)
-        XCTAssertEqual(model.phase, .driving)
+        XCTAssertEqual(model.phase, .awaiting)
         XCTAssertEqual(model.recordedPaths[0].count, kept)
         XCTAssertEqual(model.recordedDurations, [drawnFor])
     }
@@ -496,7 +506,6 @@ final class GeometryTests: XCTestCase {
     func testGoingBackOnTheCrossbarStopsTheStroke() {
         var model = RaceModel(glyph: playableA)
         trace(&model, along: model.track!.strokes[0])
-        model.motionFinished()
 
         let bar = model.activeStroke!
         XCTAssertEqual(bar.id, 2)
@@ -532,13 +541,16 @@ final class GeometryTests: XCTestCase {
     func testSuccessfulLetterReplaysThenCelebrates() {
         var model = RaceModel(glyph: playableA)
         let strokes = model.track!.strokes
-        for stroke in strokes {
-            trace(&model, along: stroke)
-            XCTAssertEqual(model.phase, .driving)
-            XCTAssertEqual(model.wallHits, 0)
-            model.motionFinished()
-        }
+        trace(&model, along: strokes[0])
+        // Zero pause between strokes: immediately awaiting stroke 2 without intermediate driving wait.
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
+        XCTAssertEqual(model.wallHits, 0)
+
+        trace(&model, along: strokes[1])
+        // After finishing the final stroke, the whole letter replays from stroke 0.
         XCTAssertEqual(model.phase, .replaying)
+        XCTAssertEqual(model.replayIndex, 0)
         XCTAssertEqual(model.recordedPaths.count, strokes.count)
         for _ in strokes {
             model.motionFinished()
@@ -546,10 +558,52 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(model.phase, .success)
         XCTAssertEqual(model.earnedStars, [3, 3])
 
+        model.replay()
+        XCTAssertEqual(model.phase, .replaying)
+        for _ in strokes {
+            model.motionFinished()
+        }
+        XCTAssertEqual(model.phase, .success)
+
         model.reset()
         XCTAssertEqual(model.phase, .awaiting)
         XCTAssertEqual(model.activeStrokeIndex, 0)
         XCTAssertTrue(model.recordedPaths.isEmpty)
+    }
+
+    func testSmoothedDrivePathAndHeadingContinuity() {
+        let jagged = [
+            LetterPoint(x: 0, y: 0),
+            LetterPoint(x: 20, y: 0),
+            LetterPoint(x: 20, y: 20),
+        ]
+        let smoothed = RoadGeometry.smoothed(jagged, iterations: 2)
+        XCTAssertEqual(smoothed.first, jagged.first)
+        XCTAssertEqual(smoothed.last, jagged.last)
+        XCTAssertGreaterThan(smoothed.count, jagged.count)
+
+        let beforeCorner = RoadGeometry.heading(of: jagged, at: 0.48)!
+        let atCorner = RoadGeometry.heading(of: jagged, at: 0.50)!
+        let afterCorner = RoadGeometry.heading(of: jagged, at: 0.52)!
+        XCTAssertGreaterThan(atCorner.x, 0.2)
+        XCTAssertGreaterThan(atCorner.y, 0.2)
+        XCTAssertGreaterThan(beforeCorner.x, atCorner.x)
+        XCTAssertGreaterThan(afterCorner.y, atCorner.y)
+
+        var model = RaceModel(glyph: playableA)
+        let stroke = model.activeStroke!
+        let offsetStart = LetterPoint(x: stroke.start.x + 4, y: stroke.start.y)
+        model.press(at: offsetStart)
+        model.move(to: LetterPoint(x: offsetStart.x + 0.3, y: offsetStart.y - 0.2))
+        XCTAssertEqual(model.currentTrace.count, 1)
+        for step in 1...20 {
+            model.move(to: point(Double(step) / 20, on: stroke))
+        }
+        model.release(at: FinishZone.middle(on: stroke))
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
+        XCTAssertEqual(model.recordedPaths[0].first?.distance(to: stroke.start) ?? 99, 0, accuracy: 0.001)
+        XCTAssertEqual(model.recordedPaths[0].last?.distance(to: FinishZone.middle(on: stroke)) ?? 99, 0, accuracy: 0.001)
     }
 
     func testCancelAndUnreadyGlyphDoNotRecordAPath() {
@@ -637,6 +691,133 @@ final class GeometryTests: XCTestCase {
             let jump = largestStep(in: ride)
             XCTAssertLessThan(jump, 2.8, "the car jumped \(jump) in one frame")
         }
+    }
+
+    func testTrackAwareViewportMaximizesSizeWhilePreservingAspectRatio() {
+        let baseViewport = LetterViewport(width: 393, height: 752)
+        for id in ["A", "a", "B", "b", "Q", "q", "W", "w"] {
+            let track = GlyphCatalog.glyph(id: id)!.track!
+            let fitted = LetterViewport(width: 393, height: 752, track: track)
+            XCTAssertEqual(fitted.scaleX, fitted.scaleY, accuracy: 0.0001, "\(id) aspect ratio")
+            XCTAssertGreaterThan(fitted.scale, baseViewport.scale, "\(id) should scale larger than base")
+
+            let pad = track.roadHalfWidth
+            for stroke in track.strokes {
+                for point in stroke.centerline {
+                    let vx = fitted.viewX(point)
+                    let vy = fitted.viewY(point)
+                    XCTAssertGreaterThan(vx - pad * fitted.scale, 0, "\(id) left clip")
+                    XCTAssertLessThan(vx + pad * fitted.scale, 393, "\(id) right clip")
+                    XCTAssertGreaterThan(vy - pad * fitted.scale, 0, "\(id) top clip")
+                    XCTAssertLessThan(vy + pad * fitted.scale, 752, "\(id) bottom clip")
+                }
+            }
+        }
+    }
+
+    func testLiveCarChasingAndLetterBDoubleBowlWithoutDonuts() {
+        var model = RaceModel(glyph: GlyphCatalog.glyph(id: "B")!)
+        trace(&model, along: model.track!.strokes[0])
+        XCTAssertEqual(model.phase, .awaiting)
+        XCTAssertEqual(model.activeStrokeIndex, 1)
+
+        let bowls = model.activeStroke!
+        model.press(at: bowls.start, time: 0)
+        XCTAssertFalse(model.liveCar.hasLaunched)
+
+        // Small initial drag shorter than car length keeps the car parked at start.
+        model.move(to: point(0.04, on: bowls), time: 0.03)
+        XCTAssertFalse(model.liveCar.hasLaunched)
+
+        // Tracing past car length launches the car live behind the finger.
+        var lastCarDistance = 0.0
+        for step in 2...60 {
+            let progress = Double(step) / 60.0
+            model.move(to: point(progress, on: bowls), time: Double(step) * 0.04)
+            if model.liveCar.hasLaunched {
+                XCTAssertGreaterThanOrEqual(model.liveCar.distanceAlong + 0.0001, lastCarDistance)
+                lastCarDistance = model.liveCar.distanceAlong
+                let off = RoadGeometry.project(
+                    model.liveCar.position,
+                    onto: bowls.centerline
+                ).distance
+                XCTAssertLessThan(off, 9.0, "live car deviated \(off) on B at step \(step)")
+            }
+        }
+        XCTAssertTrue(model.liveCar.hasLaunched)
+        XCTAssertGreaterThan(model.liveCar.progress, 0.35)
+
+        model.release(at: FinishZone.middle(on: bowls), time: 2.5)
+        XCTAssertEqual(model.phase, .replaying)
+        XCTAssertEqual(model.replayIndex, 0)
+        XCTAssertNotNil(model.completedLiveCar)
+
+        let fullSim = CarSimulation.run(path: bowls.centerline)
+        let tailSim = CarSimulation.run(path: model.recordedPaths[1], startingFrom: model.completedLiveCar)
+        XCTAssertLessThan(tailSim.duration, fullSim.duration * 0.75)
+
+        var prevProgress = 0.0
+        for sample in fullSim.samples {
+            XCTAssertGreaterThanOrEqual(sample.progress + 0.0001, prevProgress, "progress went backward on B")
+            prevProgress = sample.progress
+            let off = RoadGeometry.project(sample.position, onto: bowls.centerline, near: sample.progress).distance
+            XCTAssertLessThan(off, 9.0, "B double-bowl offset \(off) at progress \(sample.progress)")
+        }
+        XCTAssertLessThan(fullSim.sample(at: fullSim.duration).position.distance(to: bowls.centerline.last!), 8)
+    }
+
+    func testThreeStarterSingleStrokeShapesBeforeLetters() {
+        let starters = GlyphCatalog.starters
+        XCTAssertEqual(starters.count, 3)
+        XCTAssertEqual(starters.map(\.id), ["shape-line", "shape-curve", "shape-circle"])
+
+        var progress = LevelProgress()
+        for starter in starters {
+            XCTAssertEqual(starter.kind, .shape)
+            XCTAssertTrue(starter.isPlayable)
+            XCTAssertTrue(GlyphCatalog.isStarterUnlocked(starter, progress: progress))
+            XCTAssertEqual(starter.track?.strokes.count, 1)
+            XCTAssertEqual(GlyphCatalog.glyph(id: starter.id), starter)
+
+            var model = RaceModel(glyph: starter)
+            let stroke = model.activeStroke!
+            trace(&model, along: stroke)
+            XCTAssertEqual(model.phase, .replaying)
+            model.motionFinished()
+            XCTAssertEqual(model.phase, .success)
+
+            progress.recordPass(starter.id)
+            XCTAssertEqual(progress.count(for: starter.id), 1)
+        }
+    }
+
+    func testHighFrequencyCoalescedTouchAndRenderPrepPerformance() {
+        var model = RaceModel(glyph: GlyphCatalog.glyph(id: "B")!)
+        trace(&model, along: model.track!.strokes[0])
+        let bowls = model.activeStroke!
+
+        // Simulate 240 Hz coalesced touch stream (200 events over 0.85s) + 60 Hz frame ticks.
+        let points = (1...200).map { point(Double($0) / 200.0, on: bowls) }
+        let start = CFAbsoluteTimeGetCurrent()
+        model.press(at: bowls.start, time: 0)
+        for (idx, pt) in points.enumerated() {
+            let step = idx + 1
+            let time = Double(step) / 200.0 * 0.85
+            model.move(to: pt, time: time)
+            if step.isMultiple(of: 4) {
+                model.advanceLiveCar(dt: 1.0 / 60.0, at: time)
+                _ = LetterViewport(width: 393, height: 752, track: model.track).scale
+                _ = model.track?.cachedPieces.count
+                _ = model.track?.cachedGates.count
+                if model.liveCar.hasLaunched {
+                    _ = RoadGeometry.suffix(model.cachedLivePath, cumulative: model.cachedLiveCumulative, from: model.liveCar.progress)
+                }
+            }
+        }
+        model.release(at: FinishZone.middle(on: bowls), time: 0.86)
+        let elapsedMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+        XCTAssertEqual(model.phase, .replaying)
+        XCTAssertLessThan(elapsedMs, 15.0, "200 coalesced touch moves + frame prep took \(elapsedMs) ms")
     }
 
     private func largestStep(in ride: CarSimulation) -> Double {

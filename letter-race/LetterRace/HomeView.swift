@@ -8,6 +8,7 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+                    StarterStrip(starters: GlyphCatalog.starters, progress: progress.progress)
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(GlyphCatalog.levels) { level in
                             LevelCard(level: level, progress: progress.progress)
@@ -32,6 +33,38 @@ struct HomeView: View {
             ForEach(glyphs) { glyph in
                 GlyphTile(glyph: glyph, open: false, passes: 0)
                     .accessibilityLabel(glyph.symbol)
+            }
+        }
+    }
+}
+
+private struct StarterStrip: View {
+    let starters: [Glyph]
+    let progress: LevelProgress
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(starters) { glyph in
+                let open = GlyphCatalog.isStarterUnlocked(glyph, progress: progress)
+                let passes = open ? progress.count(for: glyph.id) : 0
+                Group {
+                    if open {
+                        NavigationLink(value: glyph.id) {
+                            GlyphTile(glyph: glyph, open: true, passes: passes)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(glyph.symbol)
+                    } else {
+                        GlyphTile(glyph: glyph, open: false, passes: 0)
+                            .accessibilityLabel(glyph.symbol)
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(open ? 0.78 : 0.28))
+                )
             }
         }
     }
@@ -86,10 +119,21 @@ struct GlyphTile: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Text(glyph.symbol)
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
-                .foregroundStyle(open ? TrackPalette.ink : TrackPalette.waiting.opacity(0.45))
-                .frame(maxWidth: .infinity, minHeight: 48)
+            Group {
+                if glyph.kind == .shape, let stroke = glyph.track?.strokes.first {
+                    StarterShapePreview(points: stroke.centerline)
+                        .stroke(
+                            open ? TrackPalette.ink : TrackPalette.waiting.opacity(0.45),
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+                        )
+                        .frame(width: 36, height: 36)
+                } else {
+                    Text(glyph.symbol)
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .foregroundStyle(open ? TrackPalette.ink : TrackPalette.waiting.opacity(0.45))
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
             PassDots(filled: passes)
         }
         .padding(.vertical, 6)
@@ -126,5 +170,37 @@ struct PassDots: View {
             }
         }
         .accessibilityLabel("\(min(filled, total)) of \(total)")
+    }
+}
+
+private struct StarterShapePreview: Shape {
+    var points: [LetterPoint]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        let xs = points.map(\.x)
+        let ys = points.map(\.y)
+        let minX = xs.min() ?? 0
+        let maxX = xs.max() ?? 100
+        let minY = ys.min() ?? 0
+        let maxY = ys.max() ?? 100
+        let span = max(maxX - minX, maxY - minY, 1)
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+        let scale = min(rect.width, rect.height) / CGFloat(span)
+
+        func map(_ pt: LetterPoint) -> CGPoint {
+            CGPoint(
+                x: rect.midX + CGFloat(pt.x - centerX) * scale,
+                y: rect.midY + CGFloat(pt.y - centerY) * scale
+            )
+        }
+
+        path.move(to: map(first))
+        for pt in points.dropFirst() {
+            path.addLine(to: map(pt))
+        }
+        return path
     }
 }
