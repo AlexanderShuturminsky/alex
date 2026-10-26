@@ -1,0 +1,437 @@
+import Foundation
+
+/// Shared curves for the handwriting-chart letters.
+/// Each stroke array is one numbered pen-down on the chart. A bend stays in that stroke.
+enum Manuscript {
+    /// 0° is the top. Positive degrees run counterclockwise on the page.
+    /// A larger `radiusY` makes a tall oval, easier to draw than a compass circle.
+    static func oval(
+        center: LetterPoint,
+        radiusX: Double,
+        radiusY: Double,
+        fromDeg: Double,
+        toDeg: Double,
+        steps: Int = 18
+    ) -> [LetterPoint] {
+        let count = max(steps, 2)
+        return (0...count).map { step in
+            let t = Double(step) / Double(count)
+            let degrees = fromDeg + (toDeg - fromDeg) * t
+            let radians = degrees * Double.pi / 180
+            return LetterPoint(
+                x: center.x - radiusX * sin(radians),
+                y: center.y - radiusY * cos(radians)
+            )
+        }
+    }
+
+    static func arc(
+        center: LetterPoint,
+        radius: Double,
+        fromDeg: Double,
+        toDeg: Double,
+        steps: Int = 18
+    ) -> [LetterPoint] {
+        oval(center: center, radiusX: radius, radiusY: radius, fromDeg: fromDeg, toDeg: toDeg, steps: steps)
+    }
+
+    /// Manuscript bowl: leave the stem, round the right side in a half circle, and come back.
+    /// `reach` is how far the outer edge sits from the stem. The end stays a true half circle.
+    static func rightBowl(
+        top: LetterPoint,
+        bottom: LetterPoint,
+        reach: Double,
+        steps: Int = 12
+    ) -> [LetterPoint] {
+        let height = max(abs(bottom.y - top.y), 0.001)
+        let radius = height / 2
+        let midY = (top.y + bottom.y) / 2
+        let straight = max(0, reach - radius)
+        let capCenter = LetterPoint(x: top.x + straight, y: midY)
+        let cap = oval(
+            center: capCenter,
+            radiusX: radius,
+            radiusY: radius,
+            fromDeg: 0,
+            toDeg: -180,
+            steps: steps
+        )
+        var line: [LetterPoint] = [top]
+        if straight > 1 {
+            appendDistinct(LetterPoint(x: top.x + straight, y: top.y), to: &line)
+            for point in cap.dropFirst() {
+                appendDistinct(point, to: &line)
+            }
+            appendDistinct(bottom, to: &line)
+        } else {
+            for point in cap {
+                appendDistinct(point, to: &line)
+            }
+            line[0] = top
+            line[line.count - 1] = bottom
+        }
+        return line
+    }
+
+    /// Replaces each sharp corner with a short arc so the stroke is easier to trace.
+    static func softened(_ corners: [LetterPoint], radius: Double, steps: Int = 6) -> [LetterPoint] {
+        guard corners.count >= 3, radius > 0.5 else { return corners }
+        var path: [LetterPoint] = [corners[0]]
+        for index in 1..<(corners.count - 1) {
+            appendFillet(
+                prev: corners[index - 1],
+                corner: corners[index],
+                next: corners[index + 1],
+                radius: radius,
+                steps: steps,
+                to: &path
+            )
+        }
+        appendDistinct(corners[corners.count - 1], to: &path)
+        return path
+    }
+
+    /// Gentle curve through one control point, for tails and hooks.
+    static func bend(
+        from start: LetterPoint,
+        through control: LetterPoint,
+        to end: LetterPoint,
+        steps: Int = 8
+    ) -> [LetterPoint] {
+        let count = max(steps, 2)
+        return (0...count).map { step in
+            let t = Double(step) / Double(count)
+            let stay = 1 - t
+            return LetterPoint(
+                x: stay * stay * start.x + 2 * stay * t * control.x + t * t * end.x,
+                y: stay * stay * start.y + 2 * stay * t * control.y + t * t * end.y
+            )
+        }
+    }
+
+    /// Evenly spaced points along a straight segment so road trimming can clip accurately.
+    static func subdivided(
+        from start: LetterPoint,
+        to end: LetterPoint,
+        steps: Int = 16
+    ) -> [LetterPoint] {
+        let count = max(steps, 1)
+        return (0...count).map { step in
+            let t = Double(step) / Double(count)
+            return LetterPoint(
+                x: start.x + (end.x - start.x) * t,
+                y: start.y + (end.y - start.y) * t
+            )
+        }
+    }
+
+    private static func appendFillet(
+        prev: LetterPoint,
+        corner: LetterPoint,
+        next: LetterPoint,
+        radius: Double,
+        steps: Int,
+        to path: inout [LetterPoint]
+    ) {
+        let backX = prev.x - corner.x
+        let backY = prev.y - corner.y
+        let fwdX = next.x - corner.x
+        let fwdY = next.y - corner.y
+        let backLen = hypot(backX, backY)
+        let fwdLen = hypot(fwdX, fwdY)
+        guard backLen > 0.001, fwdLen > 0.001 else {
+            appendDistinct(corner, to: &path)
+            return
+        }
+        let uBackX = backX / backLen
+        let uBackY = backY / backLen
+        let uFwdX = fwdX / fwdLen
+        let uFwdY = fwdY / fwdLen
+        let dot = min(1, max(-1, uBackX * uFwdX + uBackY * uFwdY))
+        let alpha = acos(dot)
+        // A straight run, or a fold that has to stay a turn, keeps its corner.
+        guard alpha > 0.35, alpha < Double.pi - 0.2 else {
+            appendDistinct(corner, to: &path)
+            return
+        }
+        let tanHalf = tan(alpha / 2)
+        let setback = min(radius / tanHalf, backLen * 0.45, fwdLen * 0.45)
+        let used = setback * tanHalf
+        let start = LetterPoint(x: corner.x + uBackX * setback, y: corner.y + uBackY * setback)
+        let end = LetterPoint(x: corner.x + uFwdX * setback, y: corner.y + uFwdY * setback)
+        let bisX = uBackX + uFwdX
+        let bisY = uBackY + uFwdY
+        let bisLen = hypot(bisX, bisY)
+        guard bisLen > 0.001, used > 0.2 else {
+            appendDistinct(corner, to: &path)
+            return
+        }
+        let centerDist = used / sin(alpha / 2)
+        let center = LetterPoint(
+            x: corner.x + bisX / bisLen * centerDist,
+            y: corner.y + bisY / bisLen * centerDist
+        )
+        appendDistinct(start, to: &path)
+        let startAngle = atan2(start.y - center.y, start.x - center.x)
+        let endAngle = atan2(end.y - center.y, end.x - center.x)
+        var sweep = endAngle - startAngle
+        if sweep > Double.pi { sweep -= 2 * Double.pi }
+        if sweep < -Double.pi { sweep += 2 * Double.pi }
+        let count = max(steps, 2)
+        for step in 1..<count {
+            let angle = startAngle + sweep * Double(step) / Double(count)
+            appendDistinct(
+                LetterPoint(x: center.x + used * cos(angle), y: center.y + used * sin(angle)),
+                to: &path
+            )
+        }
+        appendDistinct(end, to: &path)
+    }
+
+    private static func appendDistinct(_ point: LetterPoint, to path: inout [LetterPoint]) {
+        if let last = path.last, last.distance(to: point) < 0.05 { return }
+        path.append(point)
+    }
+
+    /// Grows a small letter until its longer side is `span` letter units, about 15% under a capital.
+    static func enlarged(_ strokes: [[LetterPoint]], span: Double) -> [[LetterPoint]] {
+        var minX = Double.greatestFiniteMagnitude
+        var minY = minX
+        var maxX = -minX
+        var maxY = -minX
+        for line in strokes {
+            for point in line {
+                minX = min(minX, point.x)
+                maxX = max(maxX, point.x)
+                minY = min(minY, point.y)
+                maxY = max(maxY, point.y)
+            }
+        }
+        let width = max(maxX - minX, 0.001)
+        let height = max(maxY - minY, 0.001)
+        let scale = span / max(width, height)
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+        return strokes.map { line in
+            line.map { point in
+                LetterPoint(
+                    x: 50 + (point.x - centerX) * scale,
+                    y: 50 + (point.y - centerY) * scale
+                )
+            }
+        }
+    }
+
+    static func span(of strokes: [[LetterPoint]]) -> Double {
+        var minX = Double.greatestFiniteMagnitude
+        var minY = minX
+        var maxX = -minX
+        var maxY = -minX
+        for line in strokes {
+            for point in line {
+                minX = min(minX, point.x)
+                maxX = max(maxX, point.x)
+                minY = min(minY, point.y)
+                maxY = max(maxY, point.y)
+            }
+        }
+        guard minX.isFinite else { return 1 }
+        return max(maxX - minX, maxY - minY, 1)
+    }
+
+    static func track(strokes: [[LetterPoint]], half: Double, fitSpan: Double? = nil) -> LetterTrack {
+        let fitted = fitSpan.map { enlarged(strokes, span: $0) } ?? strokes
+        return LetterTrack(
+            strokes: fitted.enumerated().map { index, line in
+                let end = line.last ?? LetterPoint(x: 50, y: 50)
+                return LetterStroke(
+                    id: index + 1,
+                    centerline: line,
+                    gate: FinishGate(center: end, radius: half + 4)
+                )
+            },
+            roadHalfWidth: half
+        )
+    }
+}
+
+/// Starter 1: a single straight vertical stroke down the center.
+enum StarterLine {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.subdivided(
+                from: LetterPoint(x: 50, y: 12),
+                to: LetterPoint(x: 50, y: 88),
+                steps: 16
+            ),
+        ],
+        half: 10
+    )
+}
+
+/// Starter 2: a single smooth curve (bowl) stroke from top to bottom.
+enum StarterCurve {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.rightBowl(
+                top: LetterPoint(x: 30, y: 14),
+                bottom: LetterPoint(x: 30, y: 86),
+                reach: 44,
+                steps: 20
+            ),
+        ],
+        half: 10
+    )
+}
+
+/// Starter 3: a single full oval/circle loop stroke counterclockwise from the top.
+enum StarterCircle {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.oval(
+                center: LetterPoint(x: 50, y: 50),
+                radiusX: 28,
+                radiusY: 36,
+                fromDeg: 0,
+                toDeg: 360,
+                steps: 32
+            ),
+        ],
+        half: 9.5
+    )
+}
+
+/// Lowercase a: a slightly tall oval from the top, counterclockwise, then the stem down.
+enum LetterSmallA {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.oval(
+                center: LetterPoint(x: 36, y: 62),
+                radiusX: 18,
+                radiusY: 23,
+                fromDeg: -20,
+                toDeg: 340,
+                steps: 24
+            ),
+            [LetterPoint(x: 54, y: 42), LetterPoint(x: 54, y: 88)],
+        ],
+        half: 8,
+        fitSpan: Manuscript.span(of: LetterA.track.strokes.map(\.centerline)) * 0.85
+    )
+}
+
+/// Capital B: the stem down, then both bowls in one curve from the top.
+/// The lower bowl is a little larger. Each right side is a half circle, like the chart.
+enum LetterB {
+    private static let stemTop = LetterPoint(x: 24, y: 14)
+    private static let waist = LetterPoint(x: 24, y: 48)
+    private static let stemBottom = LetterPoint(x: 24, y: 90)
+
+    static let track = Manuscript.track(
+        strokes: [
+            [stemTop, stemBottom],
+            Manuscript.rightBowl(top: stemTop, bottom: waist, reach: 32)
+                + Manuscript.rightBowl(top: waist, bottom: stemBottom, reach: 40).dropFirst(),
+        ],
+        half: 10
+    )
+}
+
+/// Lowercase b: the tall stem down, then a round bowl out to the right.
+enum LetterSmallB {
+    private static let bowlTop = LetterPoint(x: 30, y: 46)
+    private static let bowlBottom = LetterPoint(x: 30, y: 88)
+
+    static let track = Manuscript.track(
+        strokes: [
+            [LetterPoint(x: 30, y: 8), bowlBottom],
+            Manuscript.rightBowl(top: bowlTop, bottom: bowlBottom, reach: 36),
+        ],
+        half: 9,
+        fitSpan: Manuscript.span(of: LetterB.track.strokes.map(\.centerline)) * 0.85
+    )
+}
+
+/// Capital Q: a slightly tall oval counterclockwise from the upper right, then a short tail.
+enum LetterQ {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.oval(
+                center: LetterPoint(x: 46, y: 44),
+                radiusX: 24,
+                radiusY: 30,
+                fromDeg: -40,
+                toDeg: 320,
+                steps: 28
+            ),
+            Manuscript.bend(
+                from: LetterPoint(x: 56, y: 60),
+                through: LetterPoint(x: 66, y: 74),
+                to: LetterPoint(x: 76, y: 90)
+            ),
+        ],
+        half: 9
+    )
+}
+
+/// Lowercase q: a slightly tall oval, then a descender with a small hook.
+enum LetterSmallQ {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.oval(
+                center: LetterPoint(x: 38, y: 50),
+                radiusX: 16,
+                radiusY: 20,
+                fromDeg: -20,
+                toDeg: 340,
+                steps: 22
+            ),
+            Manuscript.bend(
+                from: LetterPoint(x: 54, y: 36),
+                through: LetterPoint(x: 54, y: 78),
+                to: LetterPoint(x: 68, y: 92)
+            ),
+        ],
+        half: 8,
+        fitSpan: Manuscript.span(of: LetterQ.track.strokes.map(\.centerline)) * 0.85
+    )
+}
+
+/// Capital W: one continuous zigzag, down, up, down, up, with rounded turns.
+enum LetterW {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.softened(
+                [
+                    LetterPoint(x: 8, y: 34),
+                    LetterPoint(x: 30, y: 84),
+                    LetterPoint(x: 50, y: 50),
+                    LetterPoint(x: 70, y: 84),
+                    LetterPoint(x: 92, y: 34),
+                ],
+                radius: 2
+            ),
+        ],
+        half: 7
+    )
+}
+
+/// Lowercase w: the same zigzag, between the midline and the baseline.
+enum LetterSmallW {
+    static let track = Manuscript.track(
+        strokes: [
+            Manuscript.softened(
+                [
+                    LetterPoint(x: 8, y: 46),
+                    LetterPoint(x: 28, y: 84),
+                    LetterPoint(x: 50, y: 58),
+                    LetterPoint(x: 72, y: 84),
+                    LetterPoint(x: 92, y: 46),
+                ],
+                radius: 2
+            ),
+        ],
+        half: 7,
+        fitSpan: Manuscript.span(of: LetterW.track.strokes.map(\.centerline)) * 0.85
+    )
+}
