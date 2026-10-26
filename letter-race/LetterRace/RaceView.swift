@@ -16,7 +16,7 @@ struct RaceView: View {
     var body: some View {
         let shouldAnimateChevrons = model.phase == .awaiting || model.phase == .tracing
         let isTimelinePaused = motionStart == nil && arrivalBegan == nil && !shouldAnimateChevrons
-        let interval = (motionStart != nil || arrivalBegan != nil || (model.phase == .tracing && model.liveCar.hasLaunched))
+        let interval = (motionStart != nil || arrivalBegan != nil)
             ? (1.0 / 60.0)
             : (1.0 / 24.0)
         TimelineView(.animation(minimumInterval: interval, paused: isTimelinePaused)) { timeline in
@@ -82,14 +82,7 @@ struct RaceView: View {
                 .padding(.top, 4)
                 .allowsHitTesting(model.phase == .success)
             }
-            .onChange(of: timeline.date) { oldDate, date in
-                if model.phase == .tracing, model.liveCar.hasLaunched {
-                    let frameDt = min(0.05, max(0, date.timeIntervalSince(oldDate)))
-                    model.advanceLiveCar(
-                        dt: frameDt > 0 ? frameDt : 1.0 / 60.0,
-                        at: ProcessInfo.processInfo.systemUptime
-                    )
-                }
+            .onChange(of: timeline.date) { _, date in
                 completeArrivalIfNeeded(date)
                 completeMotionIfNeeded(elapsedTime(at: date))
             }

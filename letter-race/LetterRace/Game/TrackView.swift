@@ -575,26 +575,14 @@ struct TrackView: View {
                 }
             }
             return paths
-        case .tracing:
-            var paths = Array(model.recordedPaths.prefix(model.activeStrokeIndex))
-            if !model.currentTrace.isEmpty {
-                if model.liveCar.hasLaunched {
-                    let livePath = model.cachedLivePath.isEmpty ? model.currentTrace : model.cachedLivePath
-                    let liveCum = model.cachedLivePath.isEmpty ? nil : model.cachedLiveCumulative
-                    paths.append(RoadGeometry.suffix(livePath, cumulative: liveCum, from: model.liveCar.progress))
-                } else {
-                    paths.append(model.currentTrace)
-                }
-            }
-            return paths
-        case .awaiting, .failed:
-            return Array(model.recordedPaths.prefix(model.activeStrokeIndex))
-        case .almost:
+        case .tracing, .almost:
             var paths = Array(model.recordedPaths.prefix(model.activeStrokeIndex))
             if !model.currentTrace.isEmpty {
                 paths.append(model.currentTrace)
             }
             return paths
+        case .awaiting, .failed:
+            return Array(model.recordedPaths.prefix(model.activeStrokeIndex))
         default:
             return []
         }

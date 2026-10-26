@@ -115,13 +115,6 @@ struct RaceModel: Equatable {
             let nearGate = point.distance(to: stroke.gate.center) <= track.roadHalfWidth + 6
             if !nearGate { return }
         }
-
-        let dt: Double
-        if let last = lastTouchTime, time > last {
-            dt = min(0.08, time - last)
-        } else {
-            dt = 1.0 / 30.0
-        }
         lastTouchTime = time
 
         let projection = RoadGeometry.project(
@@ -139,9 +132,6 @@ struct RaceModel: Equatable {
             }
             currentTrace.append(finishPoint)
             appendLivePoint(finishPoint)
-            if currentTraceLength >= Self.liveLaunchDistance {
-                liveCar.advance(along: cachedLivePath, cumulative: cachedLiveCumulative, dt: dt)
-            }
             finishStroke(at: time)
             return
         }
@@ -179,19 +169,10 @@ struct RaceModel: Equatable {
             registerHit()
             if phase == .failed { return }
         }
-
-        if currentTraceLength >= Self.liveLaunchDistance {
-            liveCar.advance(along: cachedLivePath, cumulative: cachedLiveCumulative, dt: dt)
-        }
     }
 
     mutating func advanceLiveCar(dt: Double, at now: TimeInterval? = nil) {
-        guard phase == .tracing,
-              currentTraceLength >= Self.liveLaunchDistance else { return }
-        if let now, let last = lastTouchTime, abs(now - last) < 0.014 {
-            return
-        }
-        liveCar.advance(along: cachedLivePath, cumulative: cachedLiveCumulative, dt: dt)
+        // Cars remain parked on the start line until the entire letter is drawn.
     }
 
     private mutating func appendLivePoint(_ point: LetterPoint) {
@@ -457,7 +438,7 @@ struct RaceModel: Equatable {
                 clearAttempt()
                 phase = .awaiting
             } else {
-                completedLiveCar = liveCar.hasLaunched ? liveCar : nil
+                completedLiveCar = nil
                 replayIndex = 0
                 clearAttempt()
                 phase = .replaying

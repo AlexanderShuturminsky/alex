@@ -724,38 +724,22 @@ final class GeometryTests: XCTestCase {
         let bowls = model.activeStroke!
         model.press(at: bowls.start, time: 0)
         XCTAssertFalse(model.liveCar.hasLaunched)
+        XCTAssertEqual(model.liveCar.position, bowls.start)
 
-        // Small initial drag shorter than car length keeps the car parked at start.
-        model.move(to: point(0.04, on: bowls), time: 0.03)
-        XCTAssertFalse(model.liveCar.hasLaunched)
-
-        // Tracing past car length launches the car live behind the finger.
-        var lastCarDistance = 0.0
-        for step in 2...60 {
+        // While tracing, the car stays parked on the start line until the entire letter is drawn.
+        for step in 1...60 {
             let progress = Double(step) / 60.0
             model.move(to: point(progress, on: bowls), time: Double(step) * 0.04)
-            if model.liveCar.hasLaunched {
-                XCTAssertGreaterThanOrEqual(model.liveCar.distanceAlong + 0.0001, lastCarDistance)
-                lastCarDistance = model.liveCar.distanceAlong
-                let off = RoadGeometry.project(
-                    model.liveCar.position,
-                    onto: bowls.centerline
-                ).distance
-                XCTAssertLessThan(off, 9.0, "live car deviated \(off) on B at step \(step)")
-            }
+            XCTAssertFalse(model.liveCar.hasLaunched)
+            XCTAssertEqual(model.liveCar.position, bowls.start)
         }
-        XCTAssertTrue(model.liveCar.hasLaunched)
-        XCTAssertGreaterThan(model.liveCar.progress, 0.35)
 
         model.release(at: FinishZone.middle(on: bowls), time: 2.5)
         XCTAssertEqual(model.phase, .replaying)
         XCTAssertEqual(model.replayIndex, 0)
-        XCTAssertNotNil(model.completedLiveCar)
+        XCTAssertNil(model.completedLiveCar)
 
-        let fullSim = CarSimulation.run(path: bowls.centerline)
-        let tailSim = CarSimulation.run(path: model.recordedPaths[1], startingFrom: model.completedLiveCar)
-        XCTAssertLessThan(tailSim.duration, fullSim.duration * 0.75)
-
+        let fullSim = CarSimulation.run(path: model.recordedPaths[1])
         var prevProgress = 0.0
         for sample in fullSim.samples {
             XCTAssertGreaterThanOrEqual(sample.progress + 0.0001, prevProgress, "progress went backward on B")
@@ -763,7 +747,7 @@ final class GeometryTests: XCTestCase {
             let off = RoadGeometry.project(sample.position, onto: bowls.centerline, near: sample.progress).distance
             XCTAssertLessThan(off, 9.0, "B double-bowl offset \(off) at progress \(sample.progress)")
         }
-        XCTAssertLessThan(fullSim.sample(at: fullSim.duration).position.distance(to: bowls.centerline.last!), 8)
+        XCTAssertLessThan(fullSim.sample(at: fullSim.duration).position.distance(to: FinishZone.middle(on: bowls)), 8)
     }
 
     func testThreeStarterSingleStrokeShapesBeforeLetters() {
